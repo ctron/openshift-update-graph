@@ -1,0 +1,20 @@
+name: Update
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Update data
+        run: |
+          for i in $(cat streams.json | jq -r .[]); do
+            curl -sH 'Accept:application/json' 'https://api.openshift.com/api/upgrades_info/v1/graph?channel=${i}&arch=amd64' -o streams/${i}.json
+          done
