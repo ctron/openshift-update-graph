@@ -42,8 +42,8 @@ jobs:
             cat streams/${i}.json | node .github/workflows/expand.js > streams/expanded/${i}.json
             if git diff --cached --exit-code -- streams/expanded/${i}.json; then
               echo "${i}: Update model did not change, reverting JSON ..."
-              git reset --hard -- streams/expanded/${i}.json
-              git reset --hard -- streams/${i}.json
+              git checkout -- streams/expanded/${i}.json
+              git checkout -- streams/${i}.json
             fi
           done
 
