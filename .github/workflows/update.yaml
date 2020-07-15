@@ -17,6 +17,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
+      - name: Checkout OpenShift Data
+        uses: actions/checkout@v2
+        with:
+          repository: 'https://github.com/openshift/cincinnati-graph-data.git'
+          path: cincinnati-graph-data
+
+      - name: Update streams
+        run: |
+          echo "[]" > streams.json
+          for i in $(ls cincinnati-graph-data/channels/*.yaml | sort); do
+            cat streams.json | jq ". += [\"$(basename $i .yaml)\"]" > streams.json
+          done
+
       - name: Update data
         run: |
           for i in $(cat streams.json | jq -r .[]); do
@@ -29,7 +42,7 @@ jobs:
           git config --global user.name "GitHub update workflow"
           git config --global user.email 'ctron@users.noreply.github.com'
 
-          git add -A -- streams/
+          git add -A
 
           if ! git diff --cached --exit-code; then
             echo "Changes have been detected, commit and push ..."
