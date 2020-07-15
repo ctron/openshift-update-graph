@@ -20,3 +20,19 @@ jobs:
             echo Updating: ${i}
             curl -sH 'Accept:application/json' 'https://api.openshift.com/api/upgrades_info/v1/graph?channel=${i}&arch=amd64' -o streams/${i}.json
           done
+
+      - name: Commit changes
+        run: |
+          git config --global user.name "GitHub update workflow"
+          git config --global user.email 'ctron@users.noreply.github.com'
+
+          git add -A -- streams/
+
+          if ! git diff --cached --exit-code; then
+            echo "Changes have been detected, commit and push ..."
+            git commit -am "Automatic update"
+            git log --graph --abbrev-commit --date=relative -n 5
+            git push
+          else
+            echo "No changes have been detected since last build, nothing to publish"
+          fi
