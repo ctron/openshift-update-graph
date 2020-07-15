@@ -29,6 +29,7 @@ jobs:
           for i in $(ls cincinnati-graph-data/channels/*.yaml | sort); do
             cat streams.json | jq ". += [\"$(basename $i .yaml)\"]" > streams.json
           done
+          cat streams.json
 
       - name: Update data
         run: |
