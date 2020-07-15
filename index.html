@@ -137,8 +137,8 @@
             .done(function(data){
                 set_streams(data);
             })
-            .fail(function(){
-                failure("Failed to refresh streams");
+            .fail(function(r, e, ex){
+                failure("Failed to refresh streams: " + ex);
             });
     }
 
