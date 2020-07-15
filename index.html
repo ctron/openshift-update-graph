@@ -28,6 +28,11 @@
             line-height: 60px;
             background-color: #f5f5f5;
         }
+        .failure {
+            position: absolute;
+            top: calc(60px + 1rem);
+            right: 2rem;
+        }
     </style>
 
 </head>
@@ -87,7 +92,7 @@
         t.find(".msg").text(msg);
 
         console.log(t);
-        $("#graph").append(t);
+        $("main").append(t);
         t.alert();
     }
 
