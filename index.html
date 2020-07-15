@@ -50,11 +50,13 @@
         console.log("Failure:", msg);
 
         let t = $('<div class="mt-3 failure alert alert-danger alert-dismissible fade show" role="alert">' +
-                '<strong>Failure!</strong> ' + msg +
+                '<strong>Failure!</strong> <span class="msg"></span>' +
                 '  <button type="button" class="close" data-dismiss="alert" aria-label="Close">\n' +
                 '    <span aria-hidden="true">&times;</span>\n' +
                 '  </button>'+
                 '</div>');
+
+        t.find(".msg").text(msg);
 
         console.log(t);
         $("#graph").append(t);
@@ -175,11 +177,11 @@
                     update_data(new vis.DataSet(nodes), new vis.DataSet(edges));
                 }
                 catch (e) {
-                    failure("Failed to process result: " + escape(e))
+                    failure("Failed to process result: " + e)
                 }
             })
-        .fail(function(){
-            failure("Failed to update graph");
+        .fail(function(r, e, ex){
+            failure("Failed to update graph: " + ex);
             $("#progress").hide();
         });
 
