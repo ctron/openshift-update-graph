@@ -127,48 +127,56 @@
         })
             .done(function(data){
 
-                let nodes = [];
-                let edges = [];
+                try {
 
-                for (let i = 0; i < data.nodes.length; i++) {
-                    let node = data.nodes[i];
-                    nodes.push({
-                        id: "" + i,
-                        label: node.version,
-                        color: {
-                            background: "#CCCCCC",
-                            border: "#BBBBBB",
-                        }
-                    });
-                }
+                    let nodes = [];
+                    let edges = [];
 
-                for (let i = 0; i < data.edges.length; i++) {
-                    let path = data.edges[i];
-                    let from = "" + path[0]
-                    let to = "" + path[1];
-                    edges.push({
-                        from: from,
-                        to: to,
-                        id: from + "-" + to,
-                        arrows: { to: { enabled: true, scaleFactor: 0.5 } },
-                        color: { color: "#DDDDDD" },
-                        chosen: { edge: function(values, id, selected, hovering) {
-                            let node_id = network.getSelection().nodes[0];
-                            console.log(node_id, id);
-                            if (id.startsWith( node_id + "-")) {
-                                values.color = "#7bc084";
-                            } else {
-                                values.color = "#efdf29";
-                                values.dashes = true;
+                    for (let i = 0; i < data.nodes.length; i++) {
+                        let node = data.nodes[i];
+                        nodes.push({
+                            id: "" + i,
+                            label: node.version,
+                            color: {
+                                background: "#CCCCCC",
+                                border: "#BBBBBB",
                             }
-                            values.width = 3;
-                        }}
-                    });
+                        });
+                    }
+
+                    for (let i = 0; i < data.edges.length; i++) {
+                        let path = data.edges[i];
+                        let from = "" + path[0]
+                        let to = "" + path[1];
+                        edges.push({
+                            from: from,
+                            to: to,
+                            id: from + "-" + to,
+                            arrows: {to: {enabled: true, scaleFactor: 0.5}},
+                            color: {color: "#DDDDDD"},
+                            chosen: {
+                                edge: function (values, id, selected, hovering) {
+                                    let node_id = network.getSelection().nodes[0];
+                                    console.log(node_id, id);
+                                    if (id.startsWith(node_id + "-")) {
+                                        values.color = "#7bc084";
+                                    } else {
+                                        values.color = "#efdf29";
+                                        values.dashes = true;
+                                    }
+                                    values.width = 3;
+                                }
+                            }
+                        });
+                    }
+
+                    // console.log("Update", "nodes", nodes, "edges", edges);
+
+                    update_data(new vis.DataSet(nodes), new vis.DataSet(edges));
                 }
-
-                // console.log("Update", "nodes", nodes, "edges", edges);
-
-                update_data(new vis.DataSet(nodes), new vis.DataSet(edges));
+                catch (e) {
+                    failure("Failed to process result: " + escape(e))
+                }
             })
         .fail(function(){
             failure("Failed to update graph");
