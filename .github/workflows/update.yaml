@@ -20,7 +20,7 @@ jobs:
       - name: Checkout OpenShift Data
         uses: actions/checkout@v2
         with:
-          repository: 'https://github.com/openshift/cincinnati-graph-data.git'
+          repository: 'openshift/cincinnati-graph-data'
           path: cincinnati-graph-data
 
       - name: Update streams
