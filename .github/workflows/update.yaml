@@ -17,5 +17,6 @@ jobs:
       - name: Update data
         run: |
           for i in $(cat streams.json | jq -r .[]); do
+            echo Updating: ${i}
             curl -sH 'Accept:application/json' 'https://api.openshift.com/api/upgrades_info/v1/graph?channel=${i}&arch=amd64' -o streams/${i}.json
           done
