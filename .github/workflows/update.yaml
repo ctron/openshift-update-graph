@@ -56,7 +56,7 @@ jobs:
 
           if ! git diff --cached --exit-code; then
             echo "Changes have been detected, commit and push ..."
-            git commit -am "Automatic update"
+            git commit -am "Automatic update ($GITHUB_RUN_ID/$GITHUB_RUN_NUMBER)"
             git log --graph --abbrev-commit --date=relative -n 5
             git push
           else
