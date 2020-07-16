@@ -120,13 +120,20 @@
     }
 
     function set_streams(streams) {
+        let preselected = window.location.hash
+        if (!preselected) {
+            preselected = DEFAULT_STREAM;
+        } else {
+            preselected = preselected.substring(1);
+        }
+
         let s = $("#streams");
         s.empty();
         streams.forEach(function(stream){
             let opt = $("<option></option>")
                 .attr("value", stream)
                 .text(stream);
-            if (DEFAULT_STREAM === stream) {
+            if (preselected === stream) {
                 opt.prop("selected", true);
                 load(stream);
             }
@@ -149,6 +156,7 @@
 
     function load(stream) {
 
+        window.location.hash = "#" + stream;
         $("#progress-bar").width("0%");
         $("#progress").show();
 
@@ -223,12 +231,10 @@
     $("#streams").change(function(){
         $("#streams option:selected").each(function(){
             let s = $(this).attr("value");
-            console.log("Selected", s);
             load(s);
         });
     });
     update_streams();
-    // load("stable-4.4");
 
 </script>
 
