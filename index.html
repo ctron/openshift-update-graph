@@ -107,7 +107,13 @@
             edges: edges
         };
         let options = {
-            physics: true
+            physics: {
+                barnesHut: {
+                    avoidOverlap: 0.5,
+                    damping: 0.5,
+                    springLength: 150,
+                },
+            },
         };
         network = new vis.Network(container, data, options);
         network.on("stabilizationProgress", function(params) {
