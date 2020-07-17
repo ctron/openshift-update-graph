@@ -14,7 +14,7 @@
             position: relative;
             min-height: 100%;
         }
-        body > .container-fluid {
+        main {
             padding-top: 60px;
         }
         body {
@@ -33,6 +33,17 @@
             top: calc(60px + 1rem);
             right: 2rem;
         }
+        #updates {
+            height: calc(100vh - 120px);
+        }
+        #graph {
+            height: 100%;
+        }
+        #info {
+            position: absolute;
+            right: 1rem;
+            top: 5rem;
+        }
     </style>
 
 </head>
@@ -50,9 +61,9 @@
     <div class="container-fluid">
         <div class="row">
             <div class="col">
-                <div class="updates">
-                    <div style="height: calc(100vh - 60px)" id="graph"></div>
-                    <div style="display: none; position: absolute; top: 60px; right: 0; height: 5rem; width: 100%;" id="progress">
+                <div id="updates">
+                    <div id="graph"></div>
+                    <div style="display: none; position: absolute; top: 0; right: 0; height: 5rem; width: 100%;" id="progress">
                         <div class="progress">
                             <div id="progress-bar" class="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
                         </div>
@@ -62,6 +73,29 @@
         </div>
     </div>
 </main>
+
+<aside id="info" style="display: none;">
+    <div class="card" style="width: 18rem;">
+        <h5 class="card-header"><span id="info-value"></span> <span id="info-type" class="badge badge-secondary"></span>
+            <span id="errata-link-section" class="float-right">
+                <a href="#" class="card-link" target="_blank" id="errata-link">Errata</a>
+            </span>
+        </h5>
+        <div class="card-body">
+
+            <div id="info-version-from-section">
+                <h5 class="card-title">From</h5>
+                <ul id="info-version-from"></ul>
+            </div>
+
+            <div id="info-version-to-section">
+                <h5 class="card-title">To</h5>
+                <ul id="info-version-to"></ul>
+            </div>
+
+        </div>
+    </div>
+</aside>
 
 <footer class="footer">
     <div class="container-fluid">
@@ -78,6 +112,8 @@
 
     const DEFAULT_STREAM = "stable-4.4";
     let network;
+    let network_data;
+    let current_channel;
 
     function failure(msg) {
         console.log("Failure:", msg);
@@ -91,7 +127,6 @@
 
         t.find(".msg").text(msg);
 
-        console.log(t);
         $("main").append(t);
         t.alert();
     }
@@ -114,6 +149,7 @@
                 },
             },
         };
+        network_data = data;
         network = new vis.Network(container, data, options);
         network.on("stabilizationProgress", function(params) {
             let p = Math.trunc((params.iterations/params.total * 100.0)) + "%";
@@ -122,6 +158,75 @@
         network.once("stabilizationIterationsDone", function() {
             $("#progress").hide();
         });
+        network.on("selectNode", function(){
+            update_selection();
+        });
+        network.on("deselectNode", function(){
+            update_selection();
+        });
+    }
+
+    function semver_compare(a,b) {
+        let av = a.split(".");
+        let bv = b.split(".");
+
+        for (let i=0; i< Math.min(av.length, bv.length); i++) {
+            let ac = av[i];
+            let bc = bv[i];
+            let r = ac-bc;
+            if (r !== 0) {
+                return r;
+            }
+        }
+        return 0; // equal
+    }
+
+    function update_selection() {
+        let selected_nodes = network.getSelectedNodes();
+        let node;
+        if (selected_nodes > 0) {
+            node = selected_nodes[0];
+        }
+
+        console.log("Selected ID: ", node);
+
+        let from_versions;
+        let to_versions;
+
+        if (node !== undefined){
+            // map from id to object
+            node = network_data.nodes.get(node);
+
+            to_versions = network_data.edges.get({
+                filter: function(item) {
+                    return item.from === node.id;
+                }
+            })
+                .map(function(o){
+                    return network_data.nodes.get(o.to).label;
+                })
+                .sort(semver_compare);
+
+            from_versions = network_data.edges.get({
+                filter: function(item) {
+                    return item.to === node.id;
+                }
+            })
+                .map(function(o){
+                    return network_data.nodes.get(o.from).label;
+                })
+                .sort(semver_compare);
+        }
+
+        console.log("Selected Node: ", node);
+        console.log(from_versions);
+        console.log(to_versions);
+
+        if (node !== undefined) {
+            set_info("Version", node.label, from_versions, to_versions, node.data.errata);
+        } else {
+            set_info();
+        }
     }
 
     function set_streams(streams) {
@@ -159,11 +264,59 @@
             });
     }
 
+    function set_info(type, value, from, to, errata) {
+        if(type === undefined || type === null || type === "") {
+            $("#info").show();
+            $("#info-type").text("Channel");
+            $("#info-value").text(current_channel);
+            $("#info-version-from-section").hide();
+            $("#info-version-to-section").hide();
+            $("#errata-link-section").hide();
+            return;
+        }
+
+        $("#info").show();
+        $("#info-type").text(type);
+        $("#info-value").text(value);
+
+        if(from !== undefined && from.length>0) {
+            let l = $("#info-version-from");
+            l.empty();
+            from.forEach(function(v){
+                l.append($("<li></li>").text(v));
+            });
+            $("#info-version-from-section").show();
+        } else {
+            $("#info-version-from-section").hide();
+        }
+
+        if(to !== undefined && to.length>0) {
+            let l = $("#info-version-to");
+            l.empty();
+            to.forEach(function(v){
+                l.append($("<li></li>").text(v));
+            });
+            $("#info-version-to-section").show();
+        } else {
+            $("#info-version-to-section").hide();
+        }
+
+        if(errata !== undefined && errata !== null && errata !== "") {
+            $("#errata-link").attr("href", errata);
+            $("#errata-link-section").show();
+        } else {
+            $("#errata-link-section").hide();
+        }
+    }
+
     function load(stream) {
 
         window.location.hash = "#" + stream;
         $("#progress-bar").width("0%");
         $("#progress").show();
+
+        current_channel = stream;
+        set_info();
 
         $.ajax({
             url: "streams/" + stream + ".json",
@@ -185,6 +338,9 @@
                         nodes.push({
                             id: "" + i,
                             label: node.version,
+                            data: {
+                                errata: node.metadata.url,
+                            },
                             color: {
                                 background: "#CCCCCC",
                                 border: "#BBBBBB",
@@ -205,7 +361,6 @@
                             chosen: {
                                 edge: function (values, id, selected, hovering) {
                                     let node_id = network.getSelection().nodes[0];
-                                    console.log(node_id, id);
                                     if (id.startsWith(node_id + "-")) {
                                         values.color = "#7bc084";
                                     } else {
@@ -217,8 +372,6 @@
                             }
                         });
                     }
-
-                    // console.log("Update", "nodes", nodes, "edges", edges);
 
                     update_data(new vis.DataSet(nodes), new vis.DataSet(edges));
                 }
