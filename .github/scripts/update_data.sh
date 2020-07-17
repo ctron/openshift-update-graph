@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -e
+
 for i in $(cat streams.json | jq -r .[]); do
 
   echo Updating: "${i}"
@@ -8,7 +10,7 @@ for i in $(cat streams.json | jq -r .[]); do
   mkdir -p streams/expanded
   cat "streams/${i}.json" | node .github/workflows/expand.js > "streams/expanded/${i}.json"
 
-  git diff --no-pager -- "streams/expanded/${i}.json"
+  git --no-pager diff -- "streams/expanded/${i}.json"
 
   if git diff --exit-code -- "streams/expanded/${i}.json"; then
     echo "${i}: Update model did not change, reverting JSON ..."
