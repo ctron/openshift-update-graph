@@ -8,7 +8,7 @@ let result = [];
 
 channel.edges.forEach(function(edge){
     let from = channel.nodes[edge[0]];
-    let to = channel.nodes[edge[0]];
+    let to = channel.nodes[edge[1]];
     result.push({
         from: from.version,
         to: to.version,

@@ -8,9 +8,9 @@ for i in $(cat streams.json | jq -r .[]); do
   mkdir -p streams/expanded
   cat "streams/${i}.json" | node .github/workflows/expand.js > "streams/expanded/${i}.json"
 
-  git diff --cached -- "streams/expanded/${i}.json"
+  git diff --no-pager -- "streams/expanded/${i}.json"
 
-  if git diff --cached --exit-code -- "streams/expanded/${i}.json"; then
+  if git diff --exit-code -- "streams/expanded/${i}.json"; then
     echo "${i}: Update model did not change, reverting JSON ..."
     git checkout -- "streams/expanded/${i}.json"
     git checkout -- "streams/${i}.json"
