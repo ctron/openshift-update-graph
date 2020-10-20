@@ -83,6 +83,13 @@
         </h5>
         <div class="card-body">
 
+            <div id="info-overview"></div>
+
+            <div id="info-download-links-section">
+                <h5 class="card-title">Downloads</h5>
+                <ul id="info-download-links"></ul>
+            </div>
+
             <div id="info-version-from-section">
                 <h5 class="card-title">From</h5>
                 <ul id="info-version-from"></ul>
@@ -91,11 +98,6 @@
             <div id="info-version-to-section">
                 <h5 class="card-title">To</h5>
                 <ul id="info-version-to"></ul>
-            </div>
-
-            <div id="info-download-links-section">
-                <h5 class="card-title">Downloads</h5>
-                <ul id="info-download-links"></ul>
             </div>
 
         </div>
@@ -120,7 +122,10 @@
 
     let network;
     let network_data;
+    let network_most_recent;
     let current_channel;
+    let current_stream_version;
+    let next_stream_version;
 
     function failure(msg) {
         console.log("Failure:", msg);
@@ -138,7 +143,7 @@
         t.alert();
     }
 
-    function update_data(nodes, edges) {
+    function update_data(nodes, edges, most_recent) {
 
         if (network) {
             network.destroy()
@@ -146,7 +151,8 @@
         let container = document.getElementById('graph');
         let data = {
             nodes: nodes,
-            edges: edges
+            edges: edges,
+            most_recent: most_recent,
         };
         let options = {
             physics: {
@@ -157,6 +163,7 @@
             },
         };
         network_data = data;
+        network_most_recent = most_recent;
         network = new vis.Network(container, data, options);
         network.on("stabilizationProgress", function(params) {
             let p = Math.trunc((params.iterations/params.total * 100.0)) + "%";
@@ -178,14 +185,25 @@
         let bv = b.split(".");
 
         for (let i=0; i< Math.min(av.length, bv.length); i++) {
-            let ac = av[i];
-            let bc = bv[i];
+            let ac = parseInt(av[i], 10);
+            let bc = parseInt(bv[i], 10);
             let r = ac-bc;
             if (r !== 0) {
                 return r;
             }
         }
         return 0; // equal
+    }
+
+    function is_stream_version(stream_version, version) {
+
+        if (stream_version === null) {
+            return false;
+        }
+
+        let v = version.split(".");
+        return stream_version.major === v[0] && stream_version.minor === v[1];
+
     }
 
     function update_selection() {
@@ -271,6 +289,14 @@
             });
     }
 
+    function set_channel_overview(o) {
+        o.empty();
+        if (network_most_recent) {
+            o.append($("<h5>Most Recent</h5>"));
+            o.append($("<span>" + network_most_recent.version + "</span>"));
+        }
+    }
+
     function set_info(type, value, from, to, errata) {
         if(type === undefined || type === null || type === "") {
             $("#info").show();
@@ -280,12 +306,18 @@
             $("#info-version-to-section").hide();
             $("#info-download-links-section").hide();
             $("#errata-link-section").hide();
+
+            let o = $("#info-overview");
+            set_channel_overview(o);
+            o.show();
+
             return;
         }
 
         $("#info").show();
         $("#info-type").text(type);
         $("#info-value").text(value);
+        $("#info-overview").hide();
 
         if(value !== undefined && value.length>0) {
             // create links
@@ -331,6 +363,20 @@
         }
     }
 
+    // check if a version is a hotfix version
+    function is_hotfix(version) {
+        return version.includes("hotfix");
+    }
+
+    function stream_version(stream_id) {
+        let s = /.*-([0-9]+)\.([0-9]+)/.exec(stream_id)
+        if (s) {
+            return {major: s[1], minor: s[2]}
+        } else {
+            return null;
+        }
+    }
+
     function load(stream) {
 
         window.location.hash = "#" + stream;
@@ -338,6 +384,8 @@
         $("#progress").show();
 
         current_channel = stream;
+        current_stream_version = stream_version(stream);
+
         set_info();
 
         $.ajax({
@@ -350,13 +398,28 @@
         })
             .done(function(data){
 
+                // convert data into nodes and edges
+
                 try {
 
                     let nodes = [];
                     let edges = [];
 
+                    let most_recent = null;
+
                     for (let i = 0; i < data.nodes.length; i++) {
                         let node = data.nodes[i];
+
+                        // check for the next best "most recent"s
+                        if (!is_hotfix(node.version)) {
+                            // version for the current stream?
+                            if (current_stream_version && is_stream_version(current_stream_version, node.version)) {
+                                if ((most_recent == null) || semver_compare(most_recent.version, node.version) < 0) {
+                                    most_recent = { version: node.version, index: i };
+                                }
+                            }
+                        }
+
                         nodes.push({
                             id: "" + i,
                             label: node.version,
@@ -368,6 +431,11 @@
                                 border: "#BBBBBB",
                             }
                         });
+                    }
+
+                    console.log("most recent", most_recent);
+                    if (most_recent !== null) {
+                        nodes[most_recent.index].color.background = "#95c3ff";
                     }
 
                     for (let i = 0; i < data.edges.length; i++) {
@@ -395,7 +463,8 @@
                         });
                     }
 
-                    update_data(new vis.DataSet(nodes), new vis.DataSet(edges));
+                    update_data(new vis.DataSet(nodes), new vis.DataSet(edges), most_recent);
+                    set_info();
                 }
                 catch (e) {
                     failure("Failed to process result: " + e)
