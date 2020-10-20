@@ -93,6 +93,11 @@
                 <ul id="info-version-to"></ul>
             </div>
 
+            <div id="info-download-links-section">
+                <h5 class="card-title">Downloads</h5>
+                <ul id="info-download-links"></ul>
+            </div>
+
         </div>
     </div>
 </aside>
@@ -111,6 +116,7 @@
 <script type="text/javascript">
 
     const DEFAULT_STREAM = "stable-4.5";
+    const OPENSHIFT_CLI_PUB_MIRROR = "https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/";
 
     let network;
     let network_data;
@@ -272,6 +278,7 @@
             $("#info-value").text(current_channel);
             $("#info-version-from-section").hide();
             $("#info-version-to-section").hide();
+            $("#info-download-links-section").hide();
             $("#errata-link-section").hide();
             return;
         }
@@ -279,6 +286,20 @@
         $("#info").show();
         $("#info-type").text(type);
         $("#info-value").text(value);
+
+        if(value !== undefined && value.length>0) {
+            // create links
+            let l = $("#info-download-links");
+            l.empty();
+            l.append($("<li><a href=" + OPENSHIFT_CLI_PUB_MIRROR + value + "/openshift-client-linux.tar.gz>oc (Linux x86_64)</a></li>"));
+            l.append($("<li><a href=" + OPENSHIFT_CLI_PUB_MIRROR + value + "/openshift-client-mac.tar.gz>oc (Mac)</a></li>"));
+            l.append($("<li><a href=" + OPENSHIFT_CLI_PUB_MIRROR + value + "/openshift-client-windows.zip>oc (Windows)</a></li>"));
+            l.append($("<li><a href=" + OPENSHIFT_CLI_PUB_MIRROR + value + "/openshift-install-linux.tar.gz>openshift-install (Linux x86_64)</a></li>"));
+            l.append($("<li><a href=" + OPENSHIFT_CLI_PUB_MIRROR + value + "/openshift-install-mac.tar.gz>openshift-install (Mac)</a></li>"));
+            $("#info-download-links-section").show();
+        } else {
+            $("#info-download-links-section").hide();
+        }
 
         if(from !== undefined && from.length>0) {
             let l = $("#info-version-from");
