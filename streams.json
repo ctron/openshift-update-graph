@@ -13,6 +13,7 @@
   "fast-4.5",
   "fast-4.6",
   "fast-4.7",
+  "fast-4.8",
   "prerelease-4.1",
   "prerelease-4.2",
   "stable-4.1",
@@ -21,5 +22,6 @@
   "stable-4.4",
   "stable-4.5",
   "stable-4.6",
-  "stable-4.7"
+  "stable-4.7",
+  "stable-4.8"
 ]
