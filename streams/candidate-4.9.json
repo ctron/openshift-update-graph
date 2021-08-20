@@ -1,1 +1,1 @@
-{"nodes":[],"edges":[]}
+{"nodes":[{"version":"4.9.0-fc.0","payload":"quay.io/openshift-release-dev/ocp-release@sha256:7e7fdee3d2a4ea95db5e356fed533fc80e350544633f175d438072e51ae8f0ff","metadata":{"io.openshift.upgrades.graph.release.channels":"candidate-4.9","io.openshift.upgrades.graph.release.manifestref":"sha256:7e7fdee3d2a4ea95db5e356fed533fc80e350544633f175d438072e51ae8f0ff"}}],"edges":[]}
