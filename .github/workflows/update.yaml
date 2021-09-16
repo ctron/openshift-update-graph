@@ -29,6 +29,9 @@ jobs:
       - name: Update data
         run: .github/scripts/update_data.sh
 
+      - name: Update sitemap
+        run: .github/scripts/update_sitemap.sh
+
       - name: Commit changes
         run: |
           git config --global user.name "GitHub update workflow"
