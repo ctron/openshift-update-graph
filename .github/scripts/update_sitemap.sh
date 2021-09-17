@@ -14,6 +14,6 @@ echo '</urlset>' >> sitemap.xml
 cat sitemap.xml
 
 echo "" > sitemap.txt
-jq < streams.json -r '.[] | "https://ctron.github.io/openshift-update-graph/#\(.)' >> sitemap.txt
+jq < streams.json -r '.[] | "https://ctron.github.io/openshift-update-graph/#\(.)"' >> sitemap.txt
 
 cat sitemap.txt
