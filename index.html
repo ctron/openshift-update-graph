@@ -61,7 +61,7 @@
 <body>
 
 <nav class="navbar navbar-light bg-light fixed-top">
-    <span class="navbar-brand">OpenShift Update Graph</span>
+    <h1 class="navbar-brand">OpenShift Update Graph <span id="heading-channel"></span></h1>
     <form class="form-inline">
         <select id="streams" class="form-control"></select>
     </form>
@@ -395,6 +395,7 @@
 
         current_channel = stream;
         current_stream_version = stream_version(stream);
+        $("#heading-channel").text(" – " + stream);
 
         set_info();
 
