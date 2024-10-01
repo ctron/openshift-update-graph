@@ -1,1 +1,1 @@
-{"version":1,"nodes":[],"edges":[],"conditionalEdges":[]}
+{"version":1,"nodes":[{"version":"4.17.0","payload":"quay.io/openshift-release-dev/ocp-release@sha256:fbad931c725b2e5b937b295b58345334322bdabb0b67da1c800a53686d7397da","metadata":{"io.openshift.upgrades.graph.release.channels":"candidate-4.17,fast-4.17,stable-4.17,candidate-4.18","io.openshift.upgrades.graph.release.manifestref":"sha256:fbad931c725b2e5b937b295b58345334322bdabb0b67da1c800a53686d7397da","url":"https://access.redhat.com/errata/RHSA-2024:3718"}}],"edges":[],"conditionalEdges":[]}
