@@ -10,6 +10,7 @@ https://ctron.github.io/openshift-update-graph/#candidate-4.17
 https://ctron.github.io/openshift-update-graph/#candidate-4.18
 https://ctron.github.io/openshift-update-graph/#candidate-4.19
 https://ctron.github.io/openshift-update-graph/#candidate-4.2
+https://ctron.github.io/openshift-update-graph/#candidate-4.20
 https://ctron.github.io/openshift-update-graph/#candidate-4.3
 https://ctron.github.io/openshift-update-graph/#candidate-4.4
 https://ctron.github.io/openshift-update-graph/#candidate-4.5
