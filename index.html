@@ -34,13 +34,50 @@
         #updates {
             height: calc(100vh - 120px);
         }
-        #graph {
+        #graph-panel {
+            display: flex;
+            flex-direction: column;
             height: 100%;
+            position: relative;
+        }
+        #graph-tabs {
+            flex: 0 0 auto;
+        }
+        #progress {
+            display: none;
+        }
+        #graph {
+            flex: 1 1 auto;
+            min-height: 0;
+        }
+        #graph-loading {
+            position: absolute;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+            z-index: 10;
+        }
+        #graph-loading-message {
+            max-width: 28rem;
+            padding: 0.75rem 1rem;
+            background: rgba(255, 255, 255, 0.92);
+            border: 1px solid #d9d9d9;
+            border-radius: 1rem;
+            box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.08);
+            text-align: center;
+        }
+        #graph-loading-text {
+            margin-bottom: 0.5rem;
+        }
+        #graph-loading-progress {
+            display: none;
         }
         #info {
             position: absolute;
             right: 1rem;
-            top: 5rem;
+            top: 7rem;
         }
     </style>
 
@@ -78,7 +115,25 @@
         <div class="row">
             <div class="col">
                 <div id="updates">
-                    <div id="graph"></div>
+                    <div id="graph-panel">
+                        <ul class="nav nav-tabs mb-2" id="graph-tabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="view-force" type="button" data-view="force">Classic</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="view-version-map" type="button" data-view="version-map">Layered DAG</button>
+                            </li>
+                        </ul>
+                        <div id="graph-loading">
+                            <div id="graph-loading-message">
+                                <div id="graph-loading-text"></div>
+                                <div id="graph-loading-progress" class="progress" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                                    <div id="graph-loading-progress-bar" class="progress-bar"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="graph"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -125,6 +180,7 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
 
 <script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="https://unpkg.com/d3-dag@1.1.0"></script>
 
 <script type="text/javascript">
 
@@ -132,6 +188,12 @@
     const OPENSHIFT_CLI_PUB_MIRROR = "https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/";
 
     let graph_state = null;
+    let current_graph_data = null;
+    let current_selected_node_id = null;
+    let active_view = "force";
+    let text_measure_context = null;
+    let version_map_worker = null;
+    let version_map_request_id = 0;
     let network_most_recent;
     let current_channel;
     let current_stream_version;
@@ -198,6 +260,54 @@
         d3.select("#graph").selectAll("*").remove();
     }
 
+    function ensure_version_map_worker() {
+        if (version_map_worker || typeof Worker === "undefined") {
+            return version_map_worker;
+        }
+
+        version_map_worker = new Worker("version-map-worker.js");
+        return version_map_worker;
+    }
+
+    function cancel_version_map_work() {
+        version_map_request_id += 1;
+
+        if (version_map_worker) {
+            version_map_worker.terminate();
+            version_map_worker = null;
+        }
+    }
+
+    function set_active_view(view) {
+        if (active_view === "version-map" && view !== "version-map") {
+            cancel_version_map_work();
+            set_progress(1);
+        }
+
+        active_view = view;
+
+        $("#graph-tabs .nav-link").removeClass("active");
+        $("#graph-tabs .nav-link[data-view='" + view + "']").addClass("active");
+
+        render_current_graph();
+    }
+
+    function render_current_graph() {
+        if (!current_graph_data) {
+            return;
+        }
+
+        if (active_view === "version-map") {
+            render_version_map(current_graph_data);
+        } else {
+            render_force_graph(current_graph_data);
+            if (graph_state) {
+                graph_state.selected_node_id = current_selected_node_id;
+            }
+            update_selection();
+        }
+    }
+
     function schedule_graph_render() {
         if (!graph_state || graph_state.render_pending) {
             return;
@@ -218,14 +328,9 @@
             return;
         }
 
-        graph_state.link
-            .attr("x1", function(d) { return edge_endpoint(d.source, d.target, 0).x; })
-            .attr("y1", function(d) { return edge_endpoint(d.source, d.target, 0).y; })
-            .attr("x2", function(d) { return edge_endpoint(d.target, d.source, 0).x; })
-            .attr("y2", function(d) { return edge_endpoint(d.target, d.source, 0).y; });
-
-        graph_state.node
-            .attr("transform", function(d) { return "translate(" + d.x + "," + d.y + ")"; });
+        if (graph_state.render_now) {
+            graph_state.render_now();
+        }
     }
 
     function edge_endpoint(from, to, inset) {
@@ -252,8 +357,67 @@
         return d.is_most_recent ? "#95c3ff" : "#CCCCCC";
     }
 
+    function edge_color(d, selected_id) {
+        if (!selected_id) {
+            return "#DDDDDD";
+        }
+        if (d.source.id === selected_id) {
+            return "#7bc084";
+        }
+        if (d.target.id === selected_id) {
+            return "#efdf29";
+        }
+        return "#DDDDDD";
+    }
+
+    function edge_opacity(d, selected_id) {
+        if (!selected_id) {
+            return 0.75;
+        }
+        if (d.source.id === selected_id || d.target.id === selected_id) {
+            return 1;
+        }
+        return 0.18;
+    }
+
     function node_spacing_radius(d) {
         return d.node_collision_radius + 10;
+    }
+
+    function simulation_progress(simulation, initial_alpha) {
+        let alpha = Math.max(simulation.alpha(), simulation.alphaMin());
+        let start = Math.max(initial_alpha, simulation.alphaMin());
+        let end = simulation.alphaMin();
+
+        if (start <= end) {
+            return 1;
+        }
+
+        return Math.log(start / alpha) / Math.log(start / end);
+    }
+
+    function estimate_text_width(text) {
+        if (text_measure_context === null) {
+            let canvas = document.createElement("canvas");
+            text_measure_context = canvas.getContext("2d");
+            text_measure_context.font = "11px sans-serif";
+        }
+
+        return text_measure_context.measureText(text).width;
+    }
+
+    function ensure_node_metrics(graph_data) {
+        graph_data.nodes.forEach(function(node) {
+            if (node.node_width !== undefined) {
+                return;
+            }
+
+            let text_width = estimate_text_width(node.label);
+            node.node_width = Math.max(38, Math.ceil(text_width + 18));
+            node.node_height = 22;
+            node.node_radius = Math.ceil(node.node_height / 2);
+            node.node_collision_radius = Math.ceil(Math.max(node.node_width, node.node_height) / 2) + 4;
+        });
     }
 
     function update_graph_styles() {
@@ -264,34 +428,22 @@
         let selected_id = graph_state.selected_node_id;
         let related = selected_id ? graph_state.related_node_ids[selected_id] : null;
 
-        graph_state.link
-            .attr("stroke", function(d) {
-                if (!selected_id) {
-                    return "#DDDDDD";
-                }
-                if (d.source.id === selected_id) {
-                    return "#7bc084";
-                }
-                if (d.target.id === selected_id) {
-                    return "#efdf29";
-                }
-                return "#DDDDDD";
-            })
-            .attr("stroke-dasharray", function(d) {
-                if (selected_id && d.target.id === selected_id) {
-                    return "4 3";
-                }
-                return null;
-            })
-            .attr("stroke-opacity", function(d) {
-                if (!selected_id) {
-                    return 0.75;
-                }
-                if (d.source.id === selected_id || d.target.id === selected_id) {
-                    return 1;
-                }
-                return 0.18;
-            });
+        if (graph_state.view_type === "version-map") {
+            graph_state.link
+                .attr("stroke", "#DDDDDD")
+                .attr("stroke-dasharray", null)
+                .attr("stroke-opacity", 0.75);
+        } else {
+            graph_state.link
+                .attr("stroke", function(d) { return edge_color(d, selected_id); })
+                .attr("stroke-dasharray", function(d) {
+                    if (selected_id && d.target.id === selected_id) {
+                        return "4 3";
+                    }
+                    return null;
+                })
+                .attr("stroke-opacity", function(d) { return edge_opacity(d, selected_id); });
+        }
 
         graph_state.node_shape
             .attr("fill", function(d) { return node_fill(d); })
@@ -352,6 +504,8 @@
     }
 
     function select_node(node_id) {
+        current_selected_node_id = node_id;
+
         if (!graph_state) {
             return;
         }
@@ -437,10 +591,7 @@
         };
     }
 
-    function render_graph(graph_data) {
-        stop_graph();
-
-        let dimensions = graph_dimensions();
+    function initialize_graph_svg(dimensions) {
         let svg = d3.select("#graph")
             .append("svg")
             .attr("viewBox", "0 0 " + dimensions.width + " " + dimensions.height)
@@ -455,6 +606,7 @@
         let zoom = d3.zoom()
             .scaleExtent([0.2, 4])
             .on("zoom", function(event) {
+                dismiss_graph_loading();
                 root.attr("transform", event.transform);
             });
 
@@ -468,6 +620,7 @@
         );
 
         svg.on("click", function() {
+            dismiss_graph_loading();
             select_node(null);
         });
 
@@ -484,14 +637,14 @@
             .attr("fill", "context-stroke")
             .attr("d", "M0,-5L10,0L0,5");
 
-        let link = root.append("g")
-            .attr("stroke-linecap", "round")
-            .selectAll("line")
-            .data(graph_data.links)
-            .join("line")
-            .attr("stroke", "#DDDDDD")
-            .attr("stroke-width", 1.2)
-            .attr("marker-end", "url(#arrowhead)");
+        return {
+            svg: svg,
+            root: root,
+        };
+    }
+
+    function create_graph_nodes(root, graph_data, drag_behavior) {
+        ensure_node_metrics(graph_data);
 
         let node = root.append("g")
             .selectAll("g")
@@ -500,32 +653,13 @@
             .style("cursor", "pointer")
             .on("click", function(event, d) {
                 event.stopPropagation();
+                dismiss_graph_loading();
                 select_node(d.id);
-            })
-            .call(
-                d3.drag()
-                    .on("start", function(event, d) {
-                        d.was_dragged = false;
-                        d.fx = d.x;
-                        d.fy = d.y;
-                    })
-                    .on("drag", function(event, d) {
-                        if (!d.was_dragged) {
-                            d.was_dragged = true;
-                            graph_state.simulation.alphaTarget(0.12).restart();
-                        }
-                        d.fx = event.x;
-                        d.fy = event.y;
-                    })
-                    .on("end", function(event, d) {
-                        if (d.was_dragged && !event.active) {
-                            graph_state.simulation.alphaTarget(0);
-                        }
-                        d.fx = null;
-                        d.fy = null;
-                        d.was_dragged = false;
-                    })
-            );
+            });
+
+        if (drag_behavior) {
+            node.call(drag_behavior);
+        }
 
         let node_text = node.append("text")
             .text(function(d) { return d.label; })
@@ -534,14 +668,6 @@
             .attr("text-anchor", "middle")
             .attr("dominant-baseline", "central")
             .attr("pointer-events", "none");
-
-        node.each(function(d) {
-            let bbox = d3.select(this).select("text").node().getBBox();
-            d.node_width = Math.max(38, Math.ceil(bbox.width + 18));
-            d.node_height = 22;
-            d.node_radius = Math.ceil(d.node_height / 2);
-            d.node_collision_radius = Math.ceil(Math.max(d.node_width, d.node_height) / 2) + 4;
-        });
 
         let node_shape = node.insert("rect", "text")
             .attr("x", function(d) { return -d.node_width / 2; })
@@ -557,6 +683,59 @@
         node.append("title")
             .text(function(d) { return d.label; });
 
+        return {
+            node: node,
+            node_shape: node_shape,
+            node_text: node_text,
+        };
+    }
+
+    function render_force_graph(graph_data) {
+        stop_graph();
+
+        set_progress(0);
+
+        let dimensions = graph_dimensions();
+        let canvas = initialize_graph_svg(dimensions);
+        let root = canvas.root;
+        canvas.svg.style("visibility", "hidden");
+
+        let link = root.append("g")
+            .attr("stroke-linecap", "round")
+            .selectAll("line")
+            .data(graph_data.links)
+            .join("line")
+            .attr("stroke", "#DDDDDD")
+            .attr("stroke-width", 1.2)
+            .attr("marker-end", "url(#arrowhead)");
+
+        let node_parts = create_graph_nodes(
+            root,
+            graph_data,
+            d3.drag()
+                .on("start", function(event, d) {
+                    d.was_dragged = false;
+                    d.fx = d.x;
+                    d.fy = d.y;
+                })
+                .on("drag", function(event, d) {
+                    if (!d.was_dragged) {
+                        d.was_dragged = true;
+                        graph_state.simulation.alphaTarget(0.12).restart();
+                    }
+                    d.fx = event.x;
+                    d.fy = event.y;
+                })
+                .on("end", function(event, d) {
+                    if (d.was_dragged && !event.active) {
+                        graph_state.simulation.alphaTarget(0);
+                    }
+                    d.fx = null;
+                    d.fy = null;
+                    d.was_dragged = false;
+                })
+        );
+
         let simulation = d3.forceSimulation(graph_data.nodes)
             .force("link", d3.forceLink(graph_data.links).id(function(d) { return d.id; }).distance(42).strength(0.35))
             .force("charge", d3.forceManyBody().strength(-110).theta(0.9).distanceMax(500))
@@ -566,17 +745,31 @@
             .velocityDecay(0.45);
 
         graph_state = {
-            svg: svg,
+            svg: canvas.svg,
             simulation: simulation,
-            node: node,
-            node_shape: node_shape,
-            node_text: node_text,
+            view_type: "force",
+            initial_alpha: simulation.alpha(),
+            node: node_parts.node,
+            node_shape: node_parts.node_shape,
+            node_text: node_parts.node_text,
             link: link,
             nodes_by_id: graph_data.nodes_by_id,
             related_node_ids: graph_data.related_node_ids,
             selected_node_id: null,
             progress_enabled: true,
             render_pending: false,
+            revealed: false,
+            loading_dismissed: false,
+            render_now: function() {
+                graph_state.link
+                    .attr("x1", function(d) { return edge_endpoint(d.source, d.target, 0).x; })
+                    .attr("y1", function(d) { return edge_endpoint(d.source, d.target, 0).y; })
+                    .attr("x2", function(d) { return edge_endpoint(d.target, d.source, 0).x; })
+                    .attr("y2", function(d) { return edge_endpoint(d.target, d.source, 0).y; });
+
+                graph_state.node
+                    .attr("transform", function(d) { return "translate(" + d.x + "," + d.y + ")"; });
+            },
             resizeHandler: function() {
                 if (!graph_state) {
                     return;
@@ -596,21 +789,259 @@
 
         simulation.on("tick", function() {
             if (graph_state && graph_state.progress_enabled) {
-                let alpha_min = simulation.alphaMin();
-                let progress = 1 - ((simulation.alpha() - alpha_min) / (1 - alpha_min));
+                let progress = simulation_progress(simulation, graph_state.initial_alpha);
                 set_progress(Math.max(0, Math.min(progress, 0.99)));
+
+                if (!graph_state.revealed && progress >= 0.8) {
+                    graph_state.revealed = true;
+                    graph_state.svg.style("visibility", "visible");
+                    $("#graph-loading-text").text("Finalizing layout.");
+                }
             }
             schedule_graph_render();
         });
         simulation.on("end", function() {
             if (graph_state) {
                 graph_state.progress_enabled = false;
+                if (!graph_state.revealed) {
+                    graph_state.revealed = true;
+                    graph_state.svg.style("visibility", "visible");
+                }
             }
             render_graph_now();
             set_progress(1);
         });
 
         update_graph_styles();
+    }
+
+    function build_sugiyama_layout(graph_data) {
+        if (graph_data.version_map_layout) {
+            return graph_data.version_map_layout;
+        }
+
+        ensure_node_metrics(graph_data);
+
+        let dag_input = graph_data.nodes.map(function(node) {
+            return {
+                id: node.id,
+                parentIds: Array.from(node.incoming_ids),
+                node: node,
+            };
+        });
+
+        let stratify = d3.graphStratify()
+            .id(function(d) { return d.id; })
+            .parentIds(function(d) { return d.parentIds; });
+
+        let dag = stratify(dag_input);
+        let layout = d3.sugiyama()
+            .layering(d3.layeringLongestPath())
+            .decross(d3.decrossTwoLayer())
+            .coord(d3.coordGreedy())
+            .nodeSize(function(node) {
+                return [node.data.node.node_height + 32, node.data.node.node_width + 56];
+            });
+
+        let layout_size = layout(dag);
+        graph_data.version_map_layout = {
+            width: layout_size.height,
+            height: layout_size.width,
+            nodes: Array.from(dag.nodes()).map(function(dag_node) {
+                return {
+                    id: dag_node.data.node.id,
+                    x: dag_node.y,
+                    y: dag_node.x,
+                };
+            }),
+            links: Array.from(dag.links()).map(function(link) {
+                return {
+                    source_id: link.source.data.node.id,
+                    target_id: link.target.data.node.id,
+                    points: link.points.map(function(point) {
+                        return {
+                            x: point.y,
+                            y: point.x,
+                        };
+                    }),
+                };
+            }),
+        };
+
+        return graph_data.version_map_layout;
+    }
+
+    function build_sugiyama_layout_async(graph_data) {
+        if (graph_data.version_map_layout) {
+            return Promise.resolve(graph_data.version_map_layout);
+        }
+
+        ensure_node_metrics(graph_data);
+
+        let worker = ensure_version_map_worker();
+        if (!worker) {
+            return Promise.resolve(build_sugiyama_layout(graph_data));
+        }
+
+        version_map_request_id += 1;
+        let request_id = version_map_request_id;
+
+        return new Promise(function(resolve, reject) {
+            let handle_message = function(event) {
+                let message = event.data;
+                if (message.requestId !== request_id) {
+                    return;
+                }
+
+                if (!message.layout && !message.error) {
+                    return;
+                }
+
+                worker.removeEventListener("message", handle_message);
+                worker.removeEventListener("error", handle_error);
+
+                if (message.error) {
+                    reject(new Error(message.error));
+                    return;
+                }
+
+                graph_data.version_map_layout = message.layout;
+                resolve(message.layout);
+            };
+
+            let handle_error = function(event) {
+                worker.removeEventListener("message", handle_message);
+                worker.removeEventListener("error", handle_error);
+                reject(new Error(event.message || "Failed to compute version map layout"));
+            };
+
+            worker.addEventListener("message", handle_message);
+            worker.addEventListener("error", handle_error);
+            worker.postMessage({
+                requestId: request_id,
+                nodes: graph_data.nodes.map(function(node) {
+                    return {
+                        id: node.id,
+                        parentIds: Array.from(node.incoming_ids),
+                        nodeWidth: node.node_width,
+                        nodeHeight: node.node_height,
+                    };
+                }),
+            });
+        });
+    }
+
+    function apply_sugiyama_layout(graph_data, dimensions) {
+        let layout = build_sugiyama_layout(graph_data);
+        let horizontal_padding = 64;
+        let vertical_padding = 48;
+        let width_scale = layout.width > 0 ? Math.max(1, (dimensions.width - (horizontal_padding * 2)) / layout.width) : 1;
+        let height_scale = layout.height > 0 ? Math.max(1, (dimensions.height - (vertical_padding * 2)) / layout.height) : 1;
+
+        layout.nodes.forEach(function(layout_node) {
+            let node = graph_data.nodes_by_id[layout_node.id];
+            node.x = horizontal_padding + (layout_node.x * width_scale);
+            node.y = vertical_padding + (layout_node.y * height_scale);
+        });
+
+        return layout.links.map(function(link) {
+            return {
+                source: graph_data.nodes_by_id[link.source_id],
+                target: graph_data.nodes_by_id[link.target_id],
+                points: link.points.map(function(point) {
+                    return {
+                        x: horizontal_padding + (point.x * width_scale),
+                        y: vertical_padding + (point.y * height_scale),
+                    };
+                }),
+            };
+        });
+    }
+
+    function version_map_path(d) {
+        let start = edge_endpoint(d.source, d.target, 0);
+        let end = edge_endpoint(d.target, d.source, 0);
+        let points = d.points.slice();
+
+        if (points.length === 0) {
+            points = [start, end];
+        } else {
+            points[0] = start;
+            points[points.length - 1] = end;
+        }
+
+        return d3.line()
+            .x(function(point) { return point.x; })
+            .y(function(point) { return point.y; })
+            .curve(d3.curveCatmullRom.alpha(0.5))(points);
+    }
+
+    function render_version_map(graph_data) {
+        stop_graph();
+
+        set_indeterminate_progress("Computing layered version map. This can take a while for large streams.");
+
+        build_sugiyama_layout_async(graph_data)
+            .then(function() {
+                if (active_view !== "version-map" || current_graph_data !== graph_data) {
+                    return;
+                }
+
+                let dimensions = graph_dimensions();
+                let dag_links = apply_sugiyama_layout(graph_data, dimensions);
+
+                let canvas = initialize_graph_svg(dimensions);
+                let root = canvas.root;
+
+                let link = root.append("g")
+                    .attr("fill", "none")
+                    .attr("stroke-linecap", "round")
+                    .selectAll("path")
+                    .data(dag_links)
+                    .join("path")
+                    .attr("stroke", "#DDDDDD")
+                    .attr("stroke-width", 1.4)
+                    .attr("marker-end", "url(#arrowhead)");
+
+                let node_parts = create_graph_nodes(root, graph_data, null);
+
+                graph_state = {
+                    svg: canvas.svg,
+                    simulation: null,
+                    view_type: "version-map",
+                    node: node_parts.node,
+                    node_shape: node_parts.node_shape,
+                    node_text: node_parts.node_text,
+                    link: link,
+                    nodes_by_id: graph_data.nodes_by_id,
+                    related_node_ids: graph_data.related_node_ids,
+                    selected_node_id: current_selected_node_id,
+                    progress_enabled: false,
+                    render_pending: false,
+                    loading_dismissed: false,
+                    render_now: function() {
+                        graph_state.link.attr("d", version_map_path);
+                        graph_state.node
+                            .attr("transform", function(d) { return "translate(" + d.x + "," + d.y + ")"; });
+                    },
+                    resizeHandler: function() {
+                        render_current_graph();
+                    }
+                };
+
+                window.addEventListener("resize", graph_state.resizeHandler);
+                render_graph_now();
+                set_progress(1);
+                update_selection();
+            })
+            .catch(function(error) {
+                if (active_view !== "version-map" || current_graph_data !== graph_data) {
+                    return;
+                }
+
+                failure("Failed to render version map: " + error.message);
+                set_progress(1);
+            });
     }
 
     function set_streams(streams) {
@@ -752,20 +1183,64 @@
     }
 
     function set_progress(p) {
+        if (graph_state && graph_state.loading_dismissed) {
+            return;
+        }
         console.debug("progress", p);
         if (p >= 1) {
-            $("#progress").hide();
-        } else {
-            $("#progress").show();
-            const value = Math.ceil(p * 100);
-            $("#progress-wrapper").attr("aria-valuenow", value.toString());
-            $("#progress-bar").width(`${value}%`);
+            $("#graph-loading").hide();
+            $("#graph-loading-text").text("");
+            $("#graph-loading-progress").hide();
+            $("#graph-loading-progress-bar")
+                .width("0%")
+                .text("")
+                .removeClass("progress-bar-striped progress-bar-animated");
         }
+        else {
+            const value = Math.ceil(p * 100);
+            $("#graph-loading-text").text("Laying out graph.");
+            $("#graph-loading-progress").css("display", "flex");
+            $("#graph-loading-progress").attr("aria-valuenow", value.toString());
+            $("#graph-loading-progress-bar")
+                .width(`${value}%`)
+                .text("")
+                .removeClass("progress-bar-striped progress-bar-animated");
+            $("#graph-loading").css("display", "flex");
+        }
+    }
+
+    function set_indeterminate_progress(message) {
+        if (graph_state && graph_state.loading_dismissed) {
+            return;
+        }
+        $("#graph-loading-text").text(message);
+        $("#graph-loading-progress").hide();
+        $("#graph-loading-progress-bar")
+            .width("0%")
+            .text("")
+            .addClass("progress-bar-striped progress-bar-animated");
+        $("#graph-loading").css("display", "flex");
+    }
+
+    function dismiss_graph_loading() {
+        if (graph_state) {
+            graph_state.loading_dismissed = true;
+        }
+        $("#graph-loading").hide();
+        $("#graph-loading-text").text("");
+        $("#graph-loading-progress").hide();
+        $("#graph-loading-progress-bar")
+            .width("0%")
+            .text("")
+            .removeClass("progress-bar-striped progress-bar-animated");
     }
 
     function load(stream) {
 
         stop_graph();
+        cancel_version_map_work();
+        current_graph_data = null;
+        current_selected_node_id = null;
         network_most_recent = null;
 
         window.location.hash = "#" + stream;
@@ -788,10 +1263,9 @@
         })
             .done(function(data){
                 try {
-                    let graph_data = build_graph_data(data);
-                    network_most_recent = graph_data.most_recent;
-                    render_graph(graph_data);
-                    set_info();
+                    current_graph_data = build_graph_data(data);
+                    network_most_recent = current_graph_data.most_recent;
+                    render_current_graph();
                 }
                 catch (e) {
                     failure("Failed to process result: " + e)
@@ -810,6 +1284,10 @@
             load(s);
         });
     });
+    $("#graph-tabs .nav-link").click(function() {
+        set_active_view($(this).data("view"));
+    });
+    set_active_view(active_view);
     update_streams();
 
 </script>
