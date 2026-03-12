@@ -374,6 +374,13 @@ class OpenShiftUpdateGraphApp {
         let selectedId = this.graphState.selected_node_id;
         let related = selectedId ? this.graphState.related_node_ids[selectedId] : null;
         let hasSearch = this.currentSearchTerm.length > 0;
+        let isHighlightedEdge = (edge) => {
+            if (!selectedId) {
+                return false;
+            }
+
+            return edge.source.id === selectedId || edge.target.id === selectedId;
+        };
 
         if (this.graphState.view_type === "version-map") {
             this.graphState.link
@@ -390,6 +397,15 @@ class OpenShiftUpdateGraphApp {
                     return null;
                 })
                 .attr("stroke-opacity", (d) => GraphUtils.edgeOpacity(d, selectedId));
+        }
+
+        if (this.graphState.view_type === "tangled-tree") {
+            this.graphState.link
+                .sort((a, b) => {
+                    let aHighlighted = isHighlightedEdge(a) ? 1 : 0;
+                    let bHighlighted = isHighlightedEdge(b) ? 1 : 0;
+                    return aHighlighted - bHighlighted;
+                });
         }
 
         this.graphState.node_shape
