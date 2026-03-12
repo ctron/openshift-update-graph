@@ -452,12 +452,19 @@
 
         let root = svg.append("g");
 
+        let zoom = d3.zoom()
+            .scaleExtent([0.2, 4])
+            .on("zoom", function(event) {
+                root.attr("transform", event.transform);
+            });
+
+        svg.call(zoom);
         svg.call(
-            d3.zoom()
-                .scaleExtent([0.2, 4])
-                .on("zoom", function(event) {
-                    root.attr("transform", event.transform);
-                })
+            zoom.transform,
+            d3.zoomIdentity
+                .translate(dimensions.width / 2, dimensions.height / 2)
+                .scale(1.5)
+                .translate(-dimensions.width / 2, -dimensions.height / 2)
         );
 
         svg.on("click", function() {
@@ -498,22 +505,25 @@
             .call(
                 d3.drag()
                     .on("start", function(event, d) {
-                        if (!event.active) {
-                            graph_state.simulation.alphaTarget(0.12).restart();
-                        }
+                        d.was_dragged = false;
                         d.fx = d.x;
                         d.fy = d.y;
                     })
                     .on("drag", function(event, d) {
+                        if (!d.was_dragged) {
+                            d.was_dragged = true;
+                            graph_state.simulation.alphaTarget(0.12).restart();
+                        }
                         d.fx = event.x;
                         d.fy = event.y;
                     })
                     .on("end", function(event, d) {
-                        if (!event.active) {
+                        if (d.was_dragged && !event.active) {
                             graph_state.simulation.alphaTarget(0);
                         }
                         d.fx = null;
                         d.fy = null;
+                        d.was_dragged = false;
                     })
             );
 
@@ -613,15 +623,30 @@
 
         let s = $("#streams");
         s.empty();
-        streams.forEach(function(stream){
+        let groups = new Map();
+
+        streams.forEach(function(stream) {
+            let match = /^([^-]+)-/.exec(stream);
+            let group_name = match ? match[1] : "other";
+
+            if (!groups.has(group_name)) {
+                groups.set(group_name, $("<optgroup></optgroup>").attr("label", group_name));
+            }
+
             let opt = $("<option></option>")
                 .attr("value", stream)
                 .text(stream);
+
             if (preselected === stream) {
                 opt.prop("selected", true);
                 load(stream);
             }
-            s.append(opt);
+
+            groups.get(group_name).append(opt);
+        });
+
+        Array.from(groups.keys()).sort().forEach(function(group_name) {
+            s.append(groups.get(group_name));
         });
     }
 
