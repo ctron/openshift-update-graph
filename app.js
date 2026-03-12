@@ -41,6 +41,26 @@ class GraphUtils {
         return null;
     }
 
+    // Order stream ids by parsed major/minor version before falling back to the raw name.
+    static compareStreamNames(a, b) {
+        let aVersion = GraphUtils.streamVersion(a);
+        let bVersion = GraphUtils.streamVersion(b);
+
+        if (aVersion && bVersion) {
+            let majorDiff = parseInt(aVersion.major, 10) - parseInt(bVersion.major, 10);
+            if (majorDiff !== 0) {
+                return majorDiff;
+            }
+
+            let minorDiff = parseInt(aVersion.minor, 10) - parseInt(bVersion.minor, 10);
+            if (minorDiff !== 0) {
+                return minorDiff;
+            }
+        }
+
+        return a.localeCompare(b);
+    }
+
     // Project an edge onto the border of the rounded node box instead of its center.
     static edgeEndpoint(from, to, inset) {
         let dx = to.x - from.x;
@@ -902,6 +922,7 @@ class OpenShiftUpdateGraphApp {
         let select = $("#streams");
         select.empty();
         let groups = new Map();
+        let streamsByGroup = new Map();
 
         streams.forEach((stream) => {
             let match = /^([^-]+)-/.exec(stream);
@@ -909,21 +930,26 @@ class OpenShiftUpdateGraphApp {
 
             if (!groups.has(groupName)) {
                 groups.set(groupName, $("<optgroup></optgroup>").attr("label", groupName));
+                streamsByGroup.set(groupName, []);
             }
-
-            let option = $("<option></option>")
-                .attr("value", stream)
-                .text(stream);
-
-            if (preselected === stream) {
-                option.prop("selected", true);
-                this.load(stream);
-            }
-
-            groups.get(groupName).append(option);
+            streamsByGroup.get(groupName).push(stream);
         });
 
         Array.from(groups.keys()).sort().forEach((groupName) => {
+            streamsByGroup.get(groupName)
+                .sort(GraphUtils.compareStreamNames)
+                .forEach((stream) => {
+                    let option = $("<option></option>")
+                        .attr("value", stream)
+                        .text(stream);
+
+                    if (preselected === stream) {
+                        option.prop("selected", true);
+                        this.load(stream);
+                    }
+
+                    groups.get(groupName).append(option);
+                });
             select.append(groups.get(groupName));
         });
     }
