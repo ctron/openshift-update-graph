@@ -79,6 +79,14 @@
             right: 1rem;
             top: 7rem;
         }
+        #search-controls {
+            min-width: 20rem;
+        }
+        #search-shortcut {
+            font-size: 0.75rem;
+            min-width: 2.25rem;
+            justify-content: center;
+        }
     </style>
 
 </head>
@@ -88,7 +96,12 @@
 <nav class="navbar navbar-light sticky-top bg-light">
     <div class="container-fluid">
         <span class="navbar-brand">OpenShift Update Graph <span id="heading-channel"></span></span>
-        <form class="d-flex">
+        <form class="d-flex gap-2">
+            <div id="search-controls" class="input-group">
+                <span id="search-shortcut" class="input-group-text text-muted">/</span>
+                <input id="version-search" class="form-control" type="search" placeholder="Search versions" aria-label="Search versions">
+                <button id="version-search-clear" class="btn btn-outline-secondary" type="button">Clear</button>
+            </div>
             <select id="streams" class="form-select"></select>
         </form>
     </div>

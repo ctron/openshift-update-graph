@@ -135,6 +135,7 @@ class OpenShiftUpdateGraphApp {
         this.graphState = null;
         this.currentGraphData = null;
         this.currentSelectedNodeId = null;
+        this.currentSearchTerm = "";
         this.activeView = "force";
         this.textMeasureContext = null;
         this.versionMapWorker = null;
@@ -146,6 +147,16 @@ class OpenShiftUpdateGraphApp {
 
     init() {
         // Wire static page controls to the controller instance once on startup.
+        $("#version-search").on("input", (event) => {
+            this.setSearchTerm($(event.currentTarget).val());
+        });
+        $("#version-search-clear").on("click", () => {
+            this.clearSearch();
+        });
+        $(document).on("keydown", (event) => {
+            this.handleGlobalKeydown(event);
+        });
+
         $("#streams").change(() => {
             $("#streams option:selected").each((_, option) => {
                 this.load($(option).attr("value"));
@@ -307,6 +318,7 @@ class OpenShiftUpdateGraphApp {
 
         let selectedId = this.graphState.selected_node_id;
         let related = selectedId ? this.graphState.related_node_ids[selectedId] : null;
+        let hasSearch = this.currentSearchTerm.length > 0;
 
         if (this.graphState.view_type === "version-map") {
             this.graphState.link
@@ -326,10 +338,18 @@ class OpenShiftUpdateGraphApp {
         }
 
         this.graphState.node_shape
-            .attr("fill", (d) => GraphUtils.nodeFill(d))
+            .attr("fill", (d) => {
+                if (this.nodeMatchesSearch(d)) {
+                    return "#ffd89b";
+                }
+                return GraphUtils.nodeFill(d);
+            })
             .attr("stroke", (d) => {
                 if (d.id === selectedId) {
                     return "#222222";
+                }
+                if (this.nodeMatchesSearch(d)) {
+                    return "#c97a00";
                 }
                 if (related && related.has(d.id)) {
                     return "#5a5a5a";
@@ -339,10 +359,16 @@ class OpenShiftUpdateGraphApp {
             .attr("stroke-width", (d) => (d.id === selectedId ? 2.5 : 1.2))
             .attr("opacity", (d) => {
                 if (!selectedId) {
+                    if (hasSearch) {
+                        return this.nodeMatchesSearch(d) ? 1 : 0.35;
+                    }
                     return 1;
                 }
                 if (d.id === selectedId || related.has(d.id)) {
                     return 1;
+                }
+                if (hasSearch && this.nodeMatchesSearch(d)) {
+                    return 0.9;
                 }
                 return 0.3;
             });
@@ -350,15 +376,29 @@ class OpenShiftUpdateGraphApp {
         this.graphState.node_text
             .attr("opacity", (d) => {
                 if (!selectedId) {
+                    if (hasSearch) {
+                        return this.nodeMatchesSearch(d) ? 1 : 0.25;
+                    }
                     return d.is_most_recent ? 1 : 0.75;
                 }
                 if (d.id === selectedId || related.has(d.id)) {
                     return 1;
                 }
+                if (hasSearch && this.nodeMatchesSearch(d)) {
+                    return 0.9;
+                }
                 return 0.2;
             })
-            .attr("fill", (d) => (d.id === selectedId ? "#111111" : "#404040"))
-            .attr("font-weight", (d) => (d.id === selectedId || d.is_most_recent ? "600" : "400"));
+            .attr("fill", (d) => {
+                if (d.id === selectedId) {
+                    return "#111111";
+                }
+                if (this.nodeMatchesSearch(d)) {
+                    return "#7a4a00";
+                }
+                return "#404040";
+            })
+            .attr("font-weight", (d) => ((d.id === selectedId || d.is_most_recent || this.nodeMatchesSearch(d)) ? "600" : "400"));
     }
 
     updateSelection() {
@@ -388,6 +428,46 @@ class OpenShiftUpdateGraphApp {
 
         this.graphState.selected_node_id = nodeId;
         this.updateSelection();
+    }
+
+    // Search matches are simple case-insensitive substring checks against the version label.
+    nodeMatchesSearch(node) {
+        if (!this.currentSearchTerm) {
+            return false;
+        }
+
+        return node.label.toLowerCase().includes(this.currentSearchTerm);
+    }
+
+    setSearchTerm(value) {
+        this.currentSearchTerm = (value || "").toString().trim().toLowerCase();
+        this.updateGraphStyles();
+    }
+
+    focusSearch() {
+        let search = $("#version-search");
+        search.trigger("focus");
+        search.trigger("select");
+    }
+
+    clearSearch() {
+        $("#version-search").val("");
+        this.setSearchTerm("");
+        this.focusSearch();
+    }
+
+    handleGlobalKeydown(event) {
+        let target = event.target;
+        let tagName = target && target.tagName ? target.tagName.toLowerCase() : "";
+        let isEditable = tagName === "input" ||
+            tagName === "textarea" ||
+            tagName === "select" ||
+            (target && target.isContentEditable);
+
+        if (!isEditable && event.key === "/") {
+            event.preventDefault();
+            this.focusSearch();
+        }
     }
 
     buildGraphData(data) {
