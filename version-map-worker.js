@@ -39,7 +39,7 @@ self.onmessage = function(event) {
             .decross(d3.decrossTwoLayer())
             .coord(d3.coordGreedy())
             .nodeSize(function(node) {
-                return [node.data.nodeHeight + 32, node.data.nodeWidth + 56];
+                return [node.data.nodeWidth + 56, node.data.nodeHeight + 32];
             });
 
         let layout_size = layout(dag);
@@ -53,13 +53,13 @@ self.onmessage = function(event) {
             requestId: message.requestId,
             progress: 1,
             layout: {
-                width: layout_size.height,
-                height: layout_size.width,
+                width: layout_size.width,
+                height: layout_size.height,
                 nodes: Array.from(dag.nodes()).map(function(dag_node) {
                     return {
                         id: dag_node.data.id,
-                        x: dag_node.y,
-                        y: dag_node.x,
+                        x: dag_node.x,
+                        y: dag_node.y,
                     };
                 }),
                 links: Array.from(dag.links()).map(function(link) {
@@ -68,8 +68,8 @@ self.onmessage = function(event) {
                         target_id: link.target.data.id,
                         points: link.points.map(function(point) {
                             return {
-                                x: point.y,
-                                y: point.x,
+                                x: point.x,
+                                y: point.y,
                             };
                         }),
                     };

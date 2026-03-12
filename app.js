@@ -38,6 +38,14 @@ class GraphUtils {
     }
 
     /**
+     * Extract the major.minor portion of a version label for grouping.
+     */
+    static majorMinorKey(version) {
+        let match = /^([0-9]+\.[0-9]+)/.exec(version);
+        return match ? match[1] : version;
+    }
+
+    /**
      * Convert a stream identifier into the major/minor pair used for filtering.
      */
     static streamVersion(streamId) {
@@ -698,6 +706,26 @@ class OpenShiftUpdateGraphApp {
     }
 
     /**
+     * Build stable x-axis centers for each major.minor group in the classic force layout.
+     */
+    buildMajorMinorCenters(graphData, dimensions) {
+        let groupKeys = Array.from(new Set(
+            graphData.nodes.map((node) => GraphUtils.majorMinorKey(node.label))
+        )).sort(GraphUtils.semverCompare);
+        let spacing = dimensions.width / (groupKeys.length + 1);
+        let centers = new Map();
+
+        groupKeys.forEach((groupKey, index) => {
+            centers.set(groupKey, {
+                x: spacing * (index + 1),
+                y: dimensions.height / 2,
+            });
+        });
+
+        return centers;
+    }
+
+    /**
      * Render the animated force-directed view and keep its simulation state alive.
      */
     renderForceGraph(graphData) {
@@ -705,6 +733,7 @@ class OpenShiftUpdateGraphApp {
         this.setProgress(0);
 
         let dimensions = this.graphDimensions();
+        let majorMinorCenters = this.buildMajorMinorCenters(graphData, dimensions);
         let canvas = this.initializeGraphSvg(dimensions);
         let root = canvas.root;
         canvas.svg.style("visibility", "hidden");
@@ -751,7 +780,9 @@ class OpenShiftUpdateGraphApp {
             .force("collide", d3.forceCollide().radius(GraphUtils.nodeSpacingRadius).iterations(2).strength(0.9))
             .force("center", d3.forceCenter(dimensions.width / 2, dimensions.height / 2))
             .alphaDecay(0.06)
-            .velocityDecay(0.45);
+            .velocityDecay(0.45)
+            .force("group-x", d3.forceX((node) => majorMinorCenters.get(GraphUtils.majorMinorKey(node.label)).x).strength(0.22))
+            .force("group-y", d3.forceY((node) => majorMinorCenters.get(GraphUtils.majorMinorKey(node.label)).y).strength(0.06));
 
         this.graphState = {
             svg: canvas.svg,
@@ -850,23 +881,23 @@ class OpenShiftUpdateGraphApp {
             .layering(d3.layeringLongestPath())
             .decross(d3.decrossTwoLayer())
             .coord(d3.coordGreedy())
-            .nodeSize((node) => [node.data.node.node_height + 32, node.data.node.node_width + 56]);
+            .nodeSize((node) => [node.data.node.node_width + 56, node.data.node.node_height + 32]);
 
         let layoutSize = layout(dag);
         graphData.version_map_layout = {
-            width: layoutSize.height,
-            height: layoutSize.width,
+            width: layoutSize.width,
+            height: layoutSize.height,
             nodes: Array.from(dag.nodes()).map((dagNode) => ({
                 id: dagNode.data.node.id,
-                x: dagNode.y,
-                y: dagNode.x,
+                x: dagNode.x,
+                y: dagNode.y,
             })),
             links: Array.from(dag.links()).map((link) => ({
                 source_id: link.source.data.node.id,
                 target_id: link.target.data.node.id,
                 points: link.points.map((point) => ({
-                    x: point.y,
-                    y: point.x,
+                    x: point.x,
+                    y: point.y,
                 })),
             })),
         };
@@ -942,21 +973,26 @@ class OpenShiftUpdateGraphApp {
         let layout = this.buildSugiyamaLayout(graphData);
         let horizontalPadding = 64;
         let verticalPadding = 48;
-        let widthScale = layout.width > 0 ? Math.max(1, (dimensions.width - (horizontalPadding * 2)) / layout.width) : 1;
-        let heightScale = layout.height > 0 ? Math.max(1, (dimensions.height - (verticalPadding * 2)) / layout.height) : 1;
+        let availableWidth = dimensions.width - (horizontalPadding * 2);
+        let availableHeight = dimensions.height - (verticalPadding * 2);
+        let widthScale = layout.width > 0 ? availableWidth / layout.width : 1;
+        let heightScale = layout.height > 0 ? availableHeight / layout.height : 1;
+        let scale = Math.max(1, Math.min(widthScale, heightScale));
+        let offsetX = horizontalPadding + Math.max(0, (availableWidth - (layout.width * scale)) / 2);
+        let offsetY = verticalPadding + Math.max(0, (availableHeight - (layout.height * scale)) / 2);
 
         layout.nodes.forEach((layoutNode) => {
             let node = graphData.nodes_by_id[layoutNode.id];
-            node.x = horizontalPadding + (layoutNode.x * widthScale);
-            node.y = verticalPadding + (layoutNode.y * heightScale);
+            node.x = offsetX + (layoutNode.x * scale);
+            node.y = offsetY + (layoutNode.y * scale);
         });
 
         return layout.links.map((link) => ({
             source: graphData.nodes_by_id[link.source_id],
             target: graphData.nodes_by_id[link.target_id],
             points: link.points.map((point) => ({
-                x: horizontalPadding + (point.x * widthScale),
-                y: verticalPadding + (point.y * heightScale),
+                x: offsetX + (point.x * scale),
+                y: offsetY + (point.y * scale),
             })),
         }));
     }
