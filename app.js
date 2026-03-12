@@ -225,6 +225,10 @@ class OpenShiftUpdateGraphApp {
         };
     }
 
+    setGraphScrollMode(enabled) {
+        d3.select("#graph").style("overflow", enabled ? "auto" : "hidden");
+    }
+
     /**
      * Tear down the active view before switching streams or render modes.
      */
@@ -236,6 +240,7 @@ class OpenShiftUpdateGraphApp {
             window.removeEventListener("resize", this.graphState.resizeHandler);
         }
         this.graphState = null;
+        this.setGraphScrollMode(false);
         d3.select("#graph").selectAll("*").remove();
     }
 
@@ -290,6 +295,11 @@ class OpenShiftUpdateGraphApp {
 
         if (this.activeView === "version-map") {
             this.renderVersionMap(this.currentGraphData);
+            return;
+        }
+
+        if (this.activeView === "tangled-tree") {
+            this.renderTangledTree(this.currentGraphData);
             return;
         }
 
@@ -603,14 +613,15 @@ class OpenShiftUpdateGraphApp {
     /**
      * Build a fresh SVG root with zooming and a reusable arrowhead marker definition.
      */
-    initializeGraphSvg(dimensions) {
+    initializeGraphSvg(dimensions, options = {}) {
+        let stretchToContainer = options.stretchToContainer !== false;
         let svg = d3.select("#graph")
             .append("svg")
             .attr("viewBox", "0 0 " + dimensions.width + " " + dimensions.height)
             .attr("width", dimensions.width)
             .attr("height", dimensions.height)
             .style("width", "100%")
-            .style("height", "100%")
+            .style("height", stretchToContainer ? "100%" : (dimensions.height + "px"))
             .style("cursor", "grab");
 
         let root = svg.append("g");
@@ -723,6 +734,175 @@ class OpenShiftUpdateGraphApp {
         });
 
         return centers;
+    }
+
+    /**
+     * Cache a left-to-right layered layout with relaxed row ordering for the tangled-tree tab.
+     */
+    buildTangledTreeLayout(graphData) {
+        if (graphData.tangled_tree_layout) {
+            return graphData.tangled_tree_layout;
+        }
+
+        this.ensureNodeMetrics(graphData);
+
+        let nodes = graphData.nodes.slice();
+        let pendingParents = new Map();
+        let depthById = new Map();
+        let queue = [];
+
+        nodes.forEach((node) => {
+            pendingParents.set(node.id, node.incoming_ids.size);
+            if (node.incoming_ids.size === 0) {
+                depthById.set(node.id, 0);
+                queue.push(node);
+            }
+        });
+
+        while (queue.length > 0) {
+            let node = queue.shift();
+            let depth = depthById.get(node.id) || 0;
+
+            node.outgoing_ids.forEach((targetId) => {
+                let nextDepth = depth + 1;
+                depthById.set(targetId, Math.max(depthById.get(targetId) || 0, nextDepth));
+                pendingParents.set(targetId, pendingParents.get(targetId) - 1);
+
+                if (pendingParents.get(targetId) === 0) {
+                    queue.push(graphData.nodes_by_id[targetId]);
+                }
+            });
+        }
+
+        nodes.forEach((node) => {
+            if (!depthById.has(node.id)) {
+                depthById.set(node.id, 0);
+            }
+        });
+
+        let layers = [];
+        nodes.forEach((node) => {
+            let depth = depthById.get(node.id);
+            if (!layers[depth]) {
+                layers[depth] = [];
+            }
+            layers[depth].push(node);
+        });
+
+        layers.forEach((layer) => {
+            layer.sort((a, b) => GraphUtils.semverCompare(a.label, b.label));
+        });
+
+        let orderById = new Map();
+        let refreshLayerOrders = () => {
+            layers.forEach((layer) => {
+                layer.forEach((node, index) => {
+                    orderById.set(node.id, index);
+                });
+            });
+        };
+
+        let averageNeighborOrder = (node, neighborIds) => {
+            if (neighborIds.size === 0) {
+                return orderById.get(node.id) || 0;
+            }
+
+            let total = 0;
+            let count = 0;
+            neighborIds.forEach((neighborId) => {
+                if (orderById.has(neighborId)) {
+                    total += orderById.get(neighborId);
+                    count += 1;
+                }
+            });
+
+            if (count === 0) {
+                return orderById.get(node.id) || 0;
+            }
+
+            return total / count;
+        };
+
+        refreshLayerOrders();
+        for (let pass = 0; pass < 4; pass++) {
+            for (let depth = 1; depth < layers.length; depth++) {
+                layers[depth].sort((a, b) => {
+                    let diff = averageNeighborOrder(a, a.incoming_ids) - averageNeighborOrder(b, b.incoming_ids);
+                    if (diff !== 0) {
+                        return diff;
+                    }
+                    return GraphUtils.semverCompare(a.label, b.label);
+                });
+                refreshLayerOrders();
+            }
+
+            for (let depth = layers.length - 2; depth >= 0; depth--) {
+                layers[depth].sort((a, b) => {
+                    let diff = averageNeighborOrder(a, a.outgoing_ids) - averageNeighborOrder(b, b.outgoing_ids);
+                    if (diff !== 0) {
+                        return diff;
+                    }
+                    return GraphUtils.semverCompare(a.label, b.label);
+                });
+                refreshLayerOrders();
+            }
+        }
+
+        let layoutNodes = [];
+        let layoutNodeById = {};
+        let maxLayerSize = layers.reduce((maxSize, layer) => Math.max(maxSize, layer ? layer.length : 0), 0);
+        let layerHeight = Math.max(1, maxLayerSize - 1);
+
+        layers.forEach((layer, depth) => {
+            if (!layer) {
+                return;
+            }
+
+            let centerOffset = (layerHeight - (layer.length - 1)) / 2;
+            layer.forEach((node, index) => {
+                let layoutNode = {
+                    id: node.id,
+                    x_rank: depth,
+                    y_rank: centerOffset + index,
+                };
+
+                layoutNodes.push(layoutNode);
+                layoutNodeById[node.id] = layoutNode;
+            });
+        });
+
+        let bundleOffsetsByRank = new Map();
+        let layoutLinks = graphData.links.map((link) => {
+            let sourceId = typeof link.source === "string" ? link.source : link.source.id;
+            let targetId = typeof link.target === "string" ? link.target : link.target.id;
+            let sourceLayout = layoutNodeById[sourceId];
+            let targetLayout = layoutNodeById[targetId];
+            let rank = Math.min(sourceLayout.x_rank, targetLayout.x_rank);
+
+            if (!bundleOffsetsByRank.has(rank)) {
+                bundleOffsetsByRank.set(rank, 0);
+            }
+
+            let localIndex = bundleOffsetsByRank.get(rank);
+            bundleOffsetsByRank.set(rank, localIndex + 1);
+
+            return {
+                source_id: sourceId,
+                target_id: targetId,
+                rank: rank,
+                bundle_offset_rank: localIndex,
+            };
+        });
+
+        graphData.tangled_tree_layout = {
+            depth_count: Math.max(1, layers.length),
+            row_count: Math.max(1, maxLayerSize),
+            nodes: layoutNodes,
+            links: layoutLinks,
+            max_bundle_count: Math.max(1, Math.max(...Array.from(bundleOffsetsByRank.values(), (count) => count), 1)),
+        };
+
+        return graphData.tangled_tree_layout;
     }
 
     /**
@@ -1019,6 +1199,85 @@ class OpenShiftUpdateGraphApp {
     }
 
     /**
+     * Scale the cached tangled-tree ranks into the current viewport.
+     */
+    applyTangledTreeLayout(graphData, dimensions) {
+        let layout = this.buildTangledTreeLayout(graphData);
+        let horizontalPadding = 72;
+        let verticalPadding = 40;
+        let hasMultipleDepths = layout.depth_count > 1;
+        let hasMultipleRows = layout.row_count > 1;
+        let depthSpan = Math.max(1, layout.depth_count - 1);
+        let rowSpan = Math.max(1, layout.row_count - 1);
+        let columnSpacing = Math.max(120, graphData.nodes.reduce((maxSpacing, node) => Math.max(maxSpacing, node.node_width + 56), 120));
+        let contentWidth = Math.max(dimensions.width, (horizontalPadding * 2) + (depthSpan * columnSpacing));
+        let usableWidth = Math.max(1, contentWidth - (horizontalPadding * 2));
+        let rowSpacing = Math.max(34, graphData.nodes.reduce((maxSpacing, node) => Math.max(maxSpacing, node.node_height + 14), 34));
+        let contentHeight = Math.max(dimensions.height, (verticalPadding * 2) + (rowSpan * rowSpacing));
+        let usableHeight = Math.max(1, contentHeight - (verticalPadding * 2));
+
+        layout.nodes.forEach((layoutNode) => {
+            let node = graphData.nodes_by_id[layoutNode.id];
+            node.x = horizontalPadding + (usableWidth * (hasMultipleDepths ? (layoutNode.x_rank / depthSpan) : 0.5));
+            node.y = verticalPadding + (usableHeight * (hasMultipleRows ? (layoutNode.y_rank / rowSpan) : 0.5));
+        });
+
+        let bundleSpacing = 10;
+        let centerOffset = ((layout.max_bundle_count - 1) * bundleSpacing) / 2;
+
+        return {
+            content_width: contentWidth,
+            content_height: contentHeight,
+            links: layout.links.map((link) => ({
+                source: graphData.nodes_by_id[link.source_id],
+                target: graphData.nodes_by_id[link.target_id],
+                rank: link.rank,
+                bundle_offset: (link.bundle_offset_rank * bundleSpacing) - centerOffset,
+            })),
+        };
+    }
+
+    /**
+     * Route tangled-tree links through a shared horizontal lane to emphasize overlap and divergence.
+     */
+    tangledTreePath(link) {
+        let inset = 2;
+        let start = {
+            x: link.source.x + ((link.target.x >= link.source.x) ? ((link.source.node_width / 2) - inset) : (-(link.source.node_width / 2) + inset)),
+            y: link.source.y,
+        };
+        let end = {
+            x: link.target.x + ((link.source.x >= link.target.x) ? ((link.target.node_width / 2) - inset) : (-(link.target.node_width / 2) + inset)),
+            y: link.target.y,
+        };
+        let dx = end.x - start.x;
+        let maxMidOffset = Math.min(16, Math.abs(dx) * 0.12);
+        let midOffset = Math.max(-maxMidOffset, Math.min(maxMidOffset, link.bundle_offset * 0.2));
+        let midX = start.x + (dx * 0.5) + midOffset;
+        midX = Math.max(Math.min(start.x, end.x) + 10, Math.min(Math.max(start.x, end.x) - 10, midX));
+        let cornerRadius = Math.min(8, Math.max(4, Math.abs(dx) * 0.04));
+        let horizontalSign = dx >= 0 ? 1 : -1;
+        let startTurnX = midX - (horizontalSign * cornerRadius);
+        let endTurnX = midX + (horizontalSign * cornerRadius);
+
+        if (Math.abs(dx) < (cornerRadius * 6) || Math.abs(end.y - start.y) < 6) {
+            return [
+                "M", start.x, start.y,
+                "L", end.x, end.y,
+            ].join(" ");
+        }
+
+        return [
+            "M", start.x, start.y,
+            "L", startTurnX, start.y,
+            "Q", midX, start.y, midX, start.y + ((end.y - start.y) >= 0 ? cornerRadius : -cornerRadius),
+            "L", midX, end.y - ((end.y - start.y) >= 0 ? cornerRadius : -cornerRadius),
+            "Q", midX, end.y, endTurnX, end.y,
+            "L", end.x, end.y,
+        ].join(" ");
+    }
+
+    /**
      * Render the layered DAG view once layout coordinates have been computed.
      */
     renderVersionMap(graphData) {
@@ -1085,6 +1344,66 @@ class OpenShiftUpdateGraphApp {
                 this.failure("Failed to render version map: " + error.message);
                 this.setProgress(1);
             });
+    }
+
+    /**
+     * Render a compact bundled layout that surfaces branching and convergence.
+     */
+    renderTangledTree(graphData) {
+        this.stopGraph();
+        this.setIndeterminateProgress("Building tangled tree layout.");
+        this.setGraphScrollMode(true);
+
+        let dimensions = this.graphDimensions();
+        let tangledLayout = this.applyTangledTreeLayout(graphData, dimensions);
+        let canvas = this.initializeGraphSvg({
+            width: tangledLayout.content_width,
+            height: tangledLayout.content_height,
+        }, {
+            stretchToContainer: false,
+        });
+        let root = canvas.root;
+
+        let link = root.append("g")
+            .attr("fill", "none")
+            .attr("stroke-linecap", "round")
+            .selectAll("path")
+            .data(tangledLayout.links)
+            .join("path")
+            .attr("stroke", "#DDDDDD")
+            .attr("stroke-width", 1.6)
+            .attr("marker-end", "url(#arrowhead)");
+
+        let nodeParts = this.createGraphNodes(root, graphData, null);
+
+        this.graphState = {
+            svg: canvas.svg,
+            simulation: null,
+            view_type: "tangled-tree",
+            node: nodeParts.node,
+            node_shape: nodeParts.node_shape,
+            node_text: nodeParts.node_text,
+            link: link,
+            nodes_by_id: graphData.nodes_by_id,
+            related_node_ids: graphData.related_node_ids,
+            selected_node_id: this.currentSelectedNodeId,
+            progress_enabled: false,
+            render_pending: false,
+            loading_dismissed: false,
+            render_now: () => {
+                this.graphState.link.attr("d", (d) => this.tangledTreePath(d));
+                this.graphState.node
+                    .attr("transform", (d) => "translate(" + d.x + "," + d.y + ")");
+            },
+            resizeHandler: () => {
+                this.renderCurrentGraph();
+            }
+        };
+
+        window.addEventListener("resize", this.graphState.resizeHandler);
+        this.renderGraphNow();
+        this.setProgress(1);
+        this.updateSelection();
     }
 
     /**
