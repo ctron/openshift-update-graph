@@ -1,6 +1,10 @@
-// Stateless helpers shared by both graph views.
+/**
+ * Stateless helpers shared by both graph views.
+ */
 class GraphUtils {
-    // Compare dotted numeric versions without needing full semver parsing.
+    /**
+     * Compare dotted numeric versions without needing full semver parsing.
+     */
     static semverCompare(a, b) {
         let av = a.split(".");
         let bv = b.split(".");
@@ -17,7 +21,9 @@ class GraphUtils {
         return 0;
     }
 
-    // Check whether a release belongs to the current major/minor stream.
+    /**
+     * Check whether a release belongs to the current major/minor stream.
+     */
     static isStreamVersion(streamVersion, version) {
         if (streamVersion === null) {
             return false;
@@ -31,7 +37,9 @@ class GraphUtils {
         return version.includes("hotfix");
     }
 
-    // Convert the stream identifier into the major/minor pair used for filtering.
+    /**
+     * Convert a stream identifier into the major/minor pair used for filtering.
+     */
     static streamVersion(streamId) {
         let s = /.*-([0-9]+)\.([0-9]+)/.exec(streamId);
         if (s) {
@@ -41,7 +49,9 @@ class GraphUtils {
         return null;
     }
 
-    // Order stream ids by parsed major/minor version before falling back to the raw name.
+    /**
+     * Order stream ids by parsed major/minor version before falling back to the raw name.
+     */
     static compareStreamNames(a, b) {
         let aVersion = GraphUtils.streamVersion(a);
         let bVersion = GraphUtils.streamVersion(b);
@@ -61,7 +71,9 @@ class GraphUtils {
         return a.localeCompare(b);
     }
 
-    // Project an edge onto the border of the rounded node box instead of its center.
+    /**
+     * Project an edge onto the border of the rounded node box instead of its center.
+     */
     static edgeEndpoint(from, to, inset) {
         let dx = to.x - from.x;
         let dy = to.y - from.y;
@@ -113,7 +125,9 @@ class GraphUtils {
         return node.node_collision_radius + 10;
     }
 
-    // Approximate how far the force simulation has progressed toward its resting state.
+    /**
+     * Approximate how far the force simulation has progressed toward its resting state.
+     */
     static simulationProgress(simulation, initialAlpha) {
         let alpha = Math.max(simulation.alpha(), simulation.alphaMin());
         let start = Math.max(initialAlpha, simulation.alphaMin());
@@ -127,7 +141,9 @@ class GraphUtils {
     }
 }
 
-// Coordinates data loading, UI state, and graph rendering for the page.
+/**
+ * Coordinates data loading, UI state, and graph rendering for the page.
+ */
 class OpenShiftUpdateGraphApp {
     constructor(options) {
         this.defaultStream = options.defaultStream;
@@ -145,8 +161,10 @@ class OpenShiftUpdateGraphApp {
         this.currentStreamVersion = null;
     }
 
+    /**
+     * Wire page controls to the controller instance and trigger the initial load.
+     */
     init() {
-        // Wire static page controls to the controller instance once on startup.
         $("#version-search").on("input", (event) => {
             this.setSearchTerm($(event.currentTarget).val());
         });
@@ -187,8 +205,10 @@ class OpenShiftUpdateGraphApp {
         alert.alert();
     }
 
+    /**
+     * Measure the current graph container so both views can fill the available panel.
+     */
     graphDimensions() {
-        // Measure the current graph container so both views can fill the available panel.
         let container = document.getElementById("graph");
         let rect = container.getBoundingClientRect();
         return {
@@ -197,8 +217,10 @@ class OpenShiftUpdateGraphApp {
         };
     }
 
+    /**
+     * Tear down the active view before switching streams or render modes.
+     */
     stopGraph() {
-        // Tear down the active view before switching streams or render modes.
         if (this.graphState && this.graphState.simulation) {
             this.graphState.simulation.stop();
         }
@@ -209,8 +231,10 @@ class OpenShiftUpdateGraphApp {
         d3.select("#graph").selectAll("*").remove();
     }
 
+    /**
+     * Lazily create the worker so the classic view does not pay for it up front.
+     */
     ensureVersionMapWorker() {
-        // Lazily create the worker so the classic view does not pay for it up front.
         if (this.versionMapWorker || typeof Worker === "undefined") {
             return this.versionMapWorker;
         }
@@ -219,8 +243,10 @@ class OpenShiftUpdateGraphApp {
         return this.versionMapWorker;
     }
 
+    /**
+     * Cancel layered-layout work and invalidate any late worker responses.
+     */
     cancelVersionMapWork() {
-        // Bump the request id so late worker responses can be ignored safely.
         this.versionMapRequestId += 1;
 
         if (this.versionMapWorker) {
@@ -229,8 +255,10 @@ class OpenShiftUpdateGraphApp {
         }
     }
 
+    /**
+     * Switch between render modes and cancel layered layout work when leaving that view.
+     */
     setActiveView(view) {
-        // Switching away from the layered view should abandon any in-flight layout work.
         if (this.activeView === "version-map" && view !== "version-map") {
             this.cancelVersionMapWork();
             this.setProgress(1);
@@ -244,8 +272,10 @@ class OpenShiftUpdateGraphApp {
         this.renderCurrentGraph();
     }
 
+    /**
+     * Re-render the current dataset using whichever view is active.
+     */
     renderCurrentGraph() {
-        // Re-render the current dataset using whichever view is active.
         if (!this.currentGraphData) {
             return;
         }
@@ -262,12 +292,13 @@ class OpenShiftUpdateGraphApp {
         this.updateSelection();
     }
 
+    /**
+     * Coalesce simulation ticks into a single DOM update per animation frame.
+     */
     scheduleGraphRender() {
         if (!this.graphState || this.graphState.render_pending) {
             return;
         }
-
-        // Coalesce simulation ticks into a single DOM update per frame.
         this.graphState.render_pending = true;
         window.requestAnimationFrame(() => {
             if (!this.graphState) {
@@ -284,9 +315,11 @@ class OpenShiftUpdateGraphApp {
         }
     }
 
+    /**
+     * Reuse a hidden canvas context so text measurement stays cheap.
+     */
     estimateTextWidth(text) {
         if (this.textMeasureContext === null) {
-            // Reuse one canvas context so node sizing stays cheap.
             let canvas = document.createElement("canvas");
             this.textMeasureContext = canvas.getContext("2d");
             this.textMeasureContext.font = "11px sans-serif";
@@ -295,8 +328,10 @@ class OpenShiftUpdateGraphApp {
         return this.textMeasureContext.measureText(text).width;
     }
 
+    /**
+     * Cache text-derived node sizes once so both renderers can reuse them.
+     */
     ensureNodeMetrics(graphData) {
-        // Cache text-derived node sizes once so both renderers can reuse them.
         graphData.nodes.forEach((node) => {
             if (node.node_width !== undefined) {
                 return;
@@ -310,8 +345,10 @@ class OpenShiftUpdateGraphApp {
         });
     }
 
+    /**
+     * Apply selection and search highlighting consistently across both graph views.
+     */
     updateGraphStyles() {
-        // Keep the same highlighting rules across both views when selection changes.
         if (!this.graphState) {
             return;
         }
@@ -401,8 +438,10 @@ class OpenShiftUpdateGraphApp {
             .attr("font-weight", (d) => ((d.id === selectedId || d.is_most_recent || this.nodeMatchesSearch(d)) ? "600" : "400"));
     }
 
+    /**
+     * Sync the side panel with the currently selected node, or the channel overview.
+     */
     updateSelection() {
-        // The side panel is driven entirely from the currently selected graph node.
         let node = null;
 
         if (this.graphState && this.graphState.selected_node_id !== null) {
@@ -418,8 +457,10 @@ class OpenShiftUpdateGraphApp {
         this.updateGraphStyles();
     }
 
+    /**
+     * Persist the selected node so it survives re-renders and view switches.
+     */
     selectNode(nodeId) {
-        // Persist the selection so it survives a re-render or a view switch.
         this.currentSelectedNodeId = nodeId;
 
         if (!this.graphState) {
@@ -430,7 +471,9 @@ class OpenShiftUpdateGraphApp {
         this.updateSelection();
     }
 
-    // Search matches are simple case-insensitive substring checks against the version label.
+    /**
+     * Match search queries with a case-insensitive substring check against the node label.
+     */
     nodeMatchesSearch(node) {
         if (!this.currentSearchTerm) {
             return false;
@@ -470,8 +513,10 @@ class OpenShiftUpdateGraphApp {
         }
     }
 
+    /**
+     * Normalize the raw stream payload into the node/link structure both renderers expect.
+     */
     buildGraphData(data) {
-        // Normalize the raw stream payload into the node/link shape both renderers expect.
         let nodes = [];
         let nodesById = {};
         let mostRecent = null;
@@ -547,8 +592,10 @@ class OpenShiftUpdateGraphApp {
         };
     }
 
+    /**
+     * Build a fresh SVG root with zooming and a reusable arrowhead marker definition.
+     */
     initializeGraphSvg(dimensions) {
-        // Build a fresh SVG root with zooming and a reusable arrowhead marker definition.
         let svg = d3.select("#graph")
             .append("svg")
             .attr("viewBox", "0 0 " + dimensions.width + " " + dimensions.height)
@@ -600,8 +647,10 @@ class OpenShiftUpdateGraphApp {
         };
     }
 
+    /**
+     * Render the shared node visuals used by both the force and layered views.
+     */
     createGraphNodes(root, graphData, dragBehavior) {
-        // Render shared node visuals once so the two views only differ in edge/layout logic.
         this.ensureNodeMetrics(graphData);
 
         let node = root.append("g")
@@ -648,8 +697,10 @@ class OpenShiftUpdateGraphApp {
         };
     }
 
+    /**
+     * Render the animated force-directed view and keep its simulation state alive.
+     */
     renderForceGraph(graphData) {
-        // The force layout is animated, so it maintains a live simulation state.
         this.stopGraph();
         this.setProgress(0);
 
@@ -774,8 +825,10 @@ class OpenShiftUpdateGraphApp {
         this.updateGraphStyles();
     }
 
+    /**
+     * Compute and cache layered coordinates in graphData for reuse across resizes.
+     */
     buildSugiyamaLayout(graphData) {
-        // Compute and cache layered coordinates in graphData for reuse across resizes.
         if (graphData.version_map_layout) {
             return graphData.version_map_layout;
         }
@@ -821,6 +874,9 @@ class OpenShiftUpdateGraphApp {
         return graphData.version_map_layout;
     }
 
+    /**
+     * Compute layered coordinates asynchronously when a worker is available.
+     */
     buildSugiyamaLayoutAsync(graphData) {
         if (graphData.version_map_layout) {
             return Promise.resolve(graphData.version_map_layout);
@@ -833,7 +889,6 @@ class OpenShiftUpdateGraphApp {
             return Promise.resolve(this.buildSugiyamaLayout(graphData));
         }
 
-        // Offload layered layout calculation to a worker for large streams.
         this.versionMapRequestId += 1;
         let requestId = this.versionMapRequestId;
 
@@ -880,8 +935,10 @@ class OpenShiftUpdateGraphApp {
         });
     }
 
+    /**
+     * Scale cached layout coordinates into the current viewport with fixed padding.
+     */
     applySugiyamaLayout(graphData, dimensions) {
-        // Scale cached layout coordinates into the current viewport with fixed padding.
         let layout = this.buildSugiyamaLayout(graphData);
         let horizontalPadding = 64;
         let verticalPadding = 48;
@@ -904,8 +961,10 @@ class OpenShiftUpdateGraphApp {
         }));
     }
 
+    /**
+     * Build a curved edge path whose visible endpoints land on node borders.
+     */
     versionMapPath(link) {
-        // Replace the first/last spline points so paths end on node borders, not centers.
         let start = GraphUtils.edgeEndpoint(link.source, link.target, 0);
         let end = GraphUtils.edgeEndpoint(link.target, link.source, 0);
         let points = link.points.slice();
@@ -923,8 +982,10 @@ class OpenShiftUpdateGraphApp {
             .curve(d3.curveCatmullRom.alpha(0.5))(points);
     }
 
+    /**
+     * Render the layered DAG view once layout coordinates have been computed.
+     */
     renderVersionMap(graphData) {
-        // The layered DAG view is static once the layout coordinates are computed.
         this.stopGraph();
         this.setIndeterminateProgress("Computing layered version map. This can take a while for large streams.");
 
@@ -990,8 +1051,10 @@ class OpenShiftUpdateGraphApp {
             });
     }
 
+    /**
+     * Populate the stream selector, grouping by prefix and sorting within each group.
+     */
     setStreams(streams) {
-        // Group streams by prefix so the selector stays navigable as the list grows.
         let preselected = window.location.hash;
         if (!preselected) {
             preselected = this.defaultStream;
@@ -1034,8 +1097,10 @@ class OpenShiftUpdateGraphApp {
         });
     }
 
+    /**
+     * Fetch the stream index and then let setStreams choose the initial selection.
+     */
     updateStreams() {
-        // Fetch the stream index first, then let setStreams decide the initial selection.
         $.ajax({
             url: "streams.json",
             type: "GET"
@@ -1048,8 +1113,10 @@ class OpenShiftUpdateGraphApp {
             });
     }
 
+    /**
+     * Render the fallback channel overview shown when no specific node is selected.
+     */
     setChannelOverview(target) {
-        // The channel overview is the fallback panel state when no specific node is selected.
         target.empty();
         if (this.networkMostRecent) {
             target.append($("<h5>Most Recent</h5>"));
@@ -1057,8 +1124,10 @@ class OpenShiftUpdateGraphApp {
         }
     }
 
+    /**
+     * Render either the channel summary or the selected node details into the side panel.
+     */
     setInfo(type, value, from, to, errata) {
-        // Render either the channel summary or the selected node details into the side panel.
         if (type === undefined || type === null || type === "") {
             $("#info").show();
             $("#info-type").text("Channel");
@@ -1122,8 +1191,10 @@ class OpenShiftUpdateGraphApp {
         }
     }
 
+    /**
+     * Update the shared loading overlay used by both render modes.
+     */
     setProgress(progress) {
-        // The loading overlay is shared by both render modes, including worker-backed layout.
         if (this.graphState && this.graphState.loading_dismissed) {
             return;
         }
@@ -1165,8 +1236,10 @@ class OpenShiftUpdateGraphApp {
         $("#graph-loading").css("display", "flex");
     }
 
+    /**
+     * Hide the loading UI permanently for the current render once the user interacts.
+     */
     dismissGraphLoading() {
-        // Once the user interacts with the graph, stop surfacing loading UI for that render.
         if (this.graphState) {
             this.graphState.loading_dismissed = true;
         }
@@ -1180,8 +1253,10 @@ class OpenShiftUpdateGraphApp {
             .removeClass("progress-bar-striped progress-bar-animated");
     }
 
+    /**
+     * Reset view state, update the URL, and fetch the dataset for the selected stream.
+     */
     load(stream) {
-        // Loading a stream resets view state, updates the URL, then fetches the new dataset.
         this.stopGraph();
         this.cancelVersionMapWork();
         this.currentGraphData = null;
