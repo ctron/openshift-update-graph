@@ -27,6 +27,7 @@ https://ctron.github.io/openshift-update-graph/#eus-4.14
 https://ctron.github.io/openshift-update-graph/#eus-4.16
 https://ctron.github.io/openshift-update-graph/#eus-4.18
 https://ctron.github.io/openshift-update-graph/#eus-4.20
+https://ctron.github.io/openshift-update-graph/#eus-4.22
 https://ctron.github.io/openshift-update-graph/#eus-4.6
 https://ctron.github.io/openshift-update-graph/#eus-4.8
 https://ctron.github.io/openshift-update-graph/#fast-4.10
@@ -42,6 +43,7 @@ https://ctron.github.io/openshift-update-graph/#fast-4.19
 https://ctron.github.io/openshift-update-graph/#fast-4.2
 https://ctron.github.io/openshift-update-graph/#fast-4.20
 https://ctron.github.io/openshift-update-graph/#fast-4.21
+https://ctron.github.io/openshift-update-graph/#fast-4.22
 https://ctron.github.io/openshift-update-graph/#fast-4.3
 https://ctron.github.io/openshift-update-graph/#fast-4.4
 https://ctron.github.io/openshift-update-graph/#fast-4.5
@@ -65,6 +67,7 @@ https://ctron.github.io/openshift-update-graph/#stable-4.19
 https://ctron.github.io/openshift-update-graph/#stable-4.2
 https://ctron.github.io/openshift-update-graph/#stable-4.20
 https://ctron.github.io/openshift-update-graph/#stable-4.21
+https://ctron.github.io/openshift-update-graph/#stable-4.22
 https://ctron.github.io/openshift-update-graph/#stable-4.3
 https://ctron.github.io/openshift-update-graph/#stable-4.4
 https://ctron.github.io/openshift-update-graph/#stable-4.5
