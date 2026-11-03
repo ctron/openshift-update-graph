@@ -53,6 +53,7 @@
   "fast-4.7",
   "fast-4.8",
   "fast-4.9",
+  "fast-5.0",
   "prerelease-4.1",
   "prerelease-4.2",
   "stable-4.1",
@@ -76,5 +77,6 @@
   "stable-4.6",
   "stable-4.7",
   "stable-4.8",
-  "stable-4.9"
+  "stable-4.9",
+  "stable-5.0"
 ]
