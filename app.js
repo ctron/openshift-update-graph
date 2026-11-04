@@ -538,7 +538,6 @@ class OpenShiftUpdateGraphApp {
         let tagName = target && target.tagName ? target.tagName.toLowerCase() : "";
         let isEditable = tagName === "input" ||
             tagName === "textarea" ||
-            tagName === "select" ||
             (target && target.isContentEditable);
 
         if (!isEditable && event.key === "/") {
